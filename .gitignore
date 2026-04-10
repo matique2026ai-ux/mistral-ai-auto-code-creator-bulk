@@ -1,0 +1,66 @@
+```
+# Compiled and binary files
+*.pyc
+*.class
+*.o
+*.obj
+*.out
+
+# Dependencies
+vendor/
+composer.lock
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build artifacts
+dist/
+build/
+target/
+
+# Python specific
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+install-sh
+Makefile
+config.status
+*.egg-info/
+.eggs/
+.coverage
+htmlcov/
+.mypy_cache/
+.pytest_cache/
+.tox/
+.coverage*
+.nox/
+
+# Web specific
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+```
