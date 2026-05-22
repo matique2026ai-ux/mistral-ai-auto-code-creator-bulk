@@ -63,4 +63,9 @@ yarn-error.log*
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Local SQLite databases and builds
+V3/autocoder_v3.sqlite
+V3/builds/
+
 ```

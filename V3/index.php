@@ -619,9 +619,9 @@ $stats = getGlobalStats($db);
     <!-- TABS: BUILD / KEYS / PROJECTS -->
     <div style="padding: 16px 20px 0 20px;">
       <div class="tabs">
-        <button class="tab-btn active" id="tabBtnBuild" onclick="switchTab('build')">⚡ Builder</button>
-        <button class="tab-btn" id="tabBtnKeys" onclick="switchTab('keys')">🔑 Keys</button>
-        <button class="tab-btn" id="tabBtnProjects" onclick="switchTab('projects')">📁 Projects</button>
+        <button class="tab-btn active" id="tabBtnBuild" onclick="switchTab('build')" data-i18n="tab_builder">⚡ Builder</button>
+        <button class="tab-btn" id="tabBtnKeys" onclick="switchTab('keys')" data-i18n="tab_keys">🔑 Keys</button>
+        <button class="tab-btn" id="tabBtnProjects" onclick="switchTab('projects')" data-i18n="tab_projects">📁 Projects</button>
       </div>
     </div>
 
@@ -636,32 +636,32 @@ $stats = getGlobalStats($db);
           <div class="form-group">
             <label for="siteType" data-i18n="site_type">Site Type</label>
             <select id="siteType" onchange="updateDefaultPages()">
-              <option value="saas">⚡ SaaS / Web App</option>
-              <option value="blog">📝 Blog / Magazine</option>
-              <option value="store">🛒 E-Commerce Store</option>
-              <option value="portfolio">🎨 Portfolio / Agency</option>
-              <option value="landing" selected>🚀 Landing Page</option>
-              <option value="corporate">🏢 Corporate / Business</option>
+              <option value="saas" data-i18n="opt_saas">⚡ SaaS / Web App</option>
+              <option value="blog" data-i18n="opt_blog">📝 Blog / Magazine</option>
+              <option value="store" data-i18n="opt_store">🛒 E-Commerce Store</option>
+              <option value="portfolio" data-i18n="opt_portfolio">🎨 Portfolio / Agency</option>
+              <option value="landing" selected data-i18n="opt_landing">🚀 Landing Page</option>
+              <option value="corporate" data-i18n="opt_corporate">🏢 Corporate / Business</option>
             </select>
           </div>
 
           <div class="form-group">
             <label for="outputLang" data-i18n="output_lang">Generated Site Language</label>
             <select id="outputLang">
-              <option value="en" selected>English</option>
-              <option value="ar">العربية (RTL)</option>
-              <option value="fr">Français</option>
-              <option value="es">Español</option>
-              <option value="de">Deutsch</option>
+              <option value="en" selected data-i18n="opt_en">English</option>
+              <option value="ar" data-i18n="opt_ar">العربية (RTL)</option>
+              <option value="fr" data-i18n="opt_fr">Français</option>
+              <option value="es" data-i18n="opt_es">Español</option>
+              <option value="de" data-i18n="opt_de">Deutsch</option>
             </select>
           </div>
 
           <div class="form-group">
             <label for="cssFramework" data-i18n="css_framework">CSS Style Framework</label>
             <select id="cssFramework">
-              <option value="vanilla" selected>Vanilla CSS (Modern, premium)</option>
-              <option value="tailwind">Tailwind CSS (Utility-first CDN)</option>
-              <option value="bootstrap">Bootstrap 5 (Clean, structured)</option>
+              <option value="vanilla" selected data-i18n="opt_vanilla">Vanilla CSS (Modern, premium)</option>
+              <option value="tailwind" data-i18n="opt_tailwind">Tailwind CSS (Utility-first CDN)</option>
+              <option value="bootstrap" data-i18n="opt_bootstrap">Bootstrap 5 (Clean, structured)</option>
             </select>
           </div>
         </div>
@@ -671,22 +671,22 @@ $stats = getGlobalStats($db);
           
           <div class="form-group">
             <label for="briefTitle" data-i18n="project_title">Project Name</label>
-            <input type="text" id="briefTitle" placeholder="Ex: SwiftSaas, DevBlog...">
+            <input type="text" id="briefTitle" placeholder="Ex: SwiftSaas, DevBlog..." data-i18n-placeholder="placeholder_title">
           </div>
 
           <div class="form-group">
             <label for="briefWho" data-i18n="brief_who">Who you are / Brand identity</label>
-            <textarea id="briefWho" rows="2" placeholder="Ex: AI freelance developer offering custom automation solutions."></textarea>
+            <textarea id="briefWho" rows="2" placeholder="Ex: AI freelance developer offering custom automation solutions." data-i18n-placeholder="placeholder_who"></textarea>
           </div>
 
           <div class="form-group">
             <label for="briefTarget" data-i18n="brief_target">Target Audience</label>
-            <textarea id="briefTarget" rows="2" placeholder="Ex: Small business owners, entrepreneurs who need to save time."></textarea>
+            <textarea id="briefTarget" rows="2" placeholder="Ex: Small business owners, entrepreneurs who need to save time." data-i18n-placeholder="placeholder_target"></textarea>
           </div>
 
           <div class="form-group">
             <label for="briefMonetize" data-i18n="brief_monetize">Monetization / Goal</label>
-            <textarea id="briefMonetize" rows="2" placeholder="Ex: Premium subscription plans, custom project requests."></textarea>
+            <textarea id="briefMonetize" rows="2" placeholder="Ex: Premium subscription plans, custom project requests." data-i18n-placeholder="placeholder_monetize"></textarea>
           </div>
         </div>
 
@@ -702,12 +702,12 @@ $stats = getGlobalStats($db);
         <div class="g-card" style="margin-bottom: 16px;">
           <div class="card-title" data-i18n="add_key">Add API Key</div>
           <div class="form-group">
-            <label for="keyLabel">Alias / Label</label>
-            <input type="text" id="keyLabel" placeholder="Pro Account, Backup Key...">
+            <label for="keyLabel" data-i18n="label_alias">Alias / Label</label>
+            <input type="text" id="keyLabel" placeholder="Pro Account, Backup Key..." data-i18n-placeholder="placeholder_alias">
           </div>
           <div class="form-group">
-            <label for="keyVal">Mistral API Key</label>
-            <input type="password" id="keyVal" placeholder="Paste your API key here">
+            <label for="keyVal" data-i18n="label_mistral">Mistral API Key</label>
+            <input type="password" id="keyVal" placeholder="Paste your API key here" data-i18n-placeholder="placeholder_mistral">
           </div>
           <button class="btn btn-primary w-full" onclick="addApiKey()" data-i18n="save">Save Key</button>
         </div>
@@ -823,6 +823,9 @@ $stats = getGlobalStats($db);
       </div>
       
       <div style="display: flex; gap: 8px; align-items: center;">
+        <button id="downloadZipBtn" class="btn btn-primary" style="padding: 6px 12px; font-size: 0.75rem; display: none; background: var(--accent2); border: none;" onclick="downloadProjectZip()">
+          📦 Download ZIP
+        </button>
         <select id="previewPageSelector" class="page-select" onchange="changePreviewPage()" style="width: auto; display: none;">
           <!-- Populated dynamically -->
         </select>
@@ -865,7 +868,83 @@ const TRANSLATIONS = {
     standing_by: "Ready to launch agent loop...",
     healing_active: "Autonomous Self-Healing Loop Active",
     clear: "Clear",
-    preview_title: "Live Sandbox Interactive Preview"
+    preview_title: "Live Sandbox Interactive Preview",
+    
+    // New tab translations
+    tab_builder: "⚡ Builder",
+    tab_keys: "🔑 Keys",
+    tab_projects: "📁 Projects",
+
+    // New label & placeholder translations
+    label_alias: "Alias / Label",
+    label_mistral: "Mistral API Key",
+    placeholder_alias: "Pro Account, Backup Key...",
+    placeholder_mistral: "Paste your API key here",
+    placeholder_title: "Ex: SwiftSaas, DevBlog...",
+    placeholder_who: "Ex: AI freelance developer offering custom automation solutions.",
+    placeholder_target: "Ex: Small business owners, entrepreneurs who need to save time.",
+    placeholder_monetize: "Ex: Premium subscription plans, custom project requests.",
+
+    // Alerts
+    alert_enter_key: "Please enter label and API key values!",
+    alert_delete_key: "Are you sure you want to delete this API Key?",
+    alert_delete_project: "Are you sure you want to delete this project? This will completely clear all files on disk!",
+    alert_fill_brief: "Please fill out all mission brief fields before launching the agent loop!",
+
+    // Dynamic Lists translations
+    empty_keys: "No keys saved. Add one above!",
+    key_active: "Active",
+    key_inactive: "Inactive / Suspended",
+    errors: "Errors",
+    btn_reset: "Reset",
+    empty_projects: "No projects found. Launch a build!",
+    proj_ready: "Ready",
+    proj_building: "Building",
+    qa_rating: "QA Rating",
+    files: "Files",
+    btn_open_sandbox: "Open Sandbox",
+    btn_delete: "Delete",
+
+    // Dynamic Badges & Stats
+    active_keys: "Active Keys",
+    tokens_used: "Tokens Used",
+    active_model_desc: "Rotating API Key pool • Active Model: devstral-2512",
+
+    // Dynamic Progress / Self-healing
+    progress_key_check: "Checking API Key Pool readiness...",
+    progress_digest: "Digesting mission parameters & loading AI engine...",
+    progress_research: "Performing autonomous competitor & niche research...",
+    progress_architecture: "Structuring application directory & pages via Mistral...",
+    progress_css: "Styling aesthetic UI components...",
+    progress_config: "Writing global PHP platform context config...",
+    progress_generation: "Generating application pages source code...",
+    progress_page: "Generating dynamic code for page: ",
+    progress_persistence: "Saving compiled files to sandbox folder...",
+    progress_qa: "Performing autonomous code quality checks...",
+    progress_healing: "Healing issue in ",
+    progress_seo: "Structuring index crawlers SEO parameters...",
+    progress_sandbox: "Deploying sandbox parameters live...",
+    healing_banner_status: "Debugging generated PHP syntax & layout flow issues...",
+    correcting: "Correcting",
+    in_file: "in",
+    pass: "Pass",
+    iteration: "Iter",
+
+    // Select option translations
+    opt_saas: "⚡ SaaS / Web App",
+    opt_blog: "📝 Blog / Magazine",
+    opt_store: "🛒 E-Commerce Store",
+    opt_portfolio: "🎨 Portfolio / Agency",
+    opt_landing: "🚀 Landing Page",
+    opt_corporate: "🏢 Corporate / Business",
+    opt_en: "English",
+    opt_ar: "العربية (RTL)",
+    opt_fr: "Français",
+    opt_es: "Español",
+    opt_de: "Deutsch",
+    opt_vanilla: "Vanilla CSS (Modern, premium)",
+    opt_tailwind: "Tailwind CSS (Utility-first CDN)",
+    opt_bootstrap: "Bootstrap 5 (Clean, structured)"
   },
   ar: {
     config: "إعدادات المشروع",
@@ -890,11 +969,94 @@ const TRANSLATIONS = {
     standing_by: "جاهز لإطلاق المعالجة المستقلة...",
     healing_active: "دورة التصحيح والمعالجة الذاتية نشطة",
     clear: "مسح",
-    preview_title: "معاينة مباشرة تفاعلية للموقع"
+    preview_title: "معاينة مباشرة تفاعلية للموقع",
+
+    // New tab translations
+    tab_builder: "⚡ الباني",
+    tab_keys: "🔑 المفاتيح",
+    tab_projects: "📁 المشاريع",
+
+    // New label & placeholder translations
+    label_alias: "الاسم المستعار / التسمية",
+    label_mistral: "مفتاح Mistral API Key",
+    placeholder_alias: "حساب احترافي، مفتاح احتياطي...",
+    placeholder_mistral: "أضف مفتاح API الخاص بك هنا",
+    placeholder_title: "مثال: SwiftSaas, DevBlog...",
+    placeholder_who: "مثال: مطور مستقل للذكاء الاصطناعي يقدم حلول أتمتة مخصصة.",
+    placeholder_target: "مثال: أصحاب المشاريع الصغيرة، رواد الأعمال الذين يريدون توفير الوقت.",
+    placeholder_monetize: "مثال: خطط اشتراك مميزة، طلبات مشاريع مخصصة.",
+
+    // Alerts
+    alert_enter_key: "يرجى إدخال التسمية وقيمة مفتاح API!",
+    alert_delete_key: "هل أنت متأكد من رغبتك في حذف مفتاح API هذا؟",
+    alert_delete_project: "هل أنت متأكد من رغبتك في حذف هذا المشروع؟ سيؤدي ذلك إلى حذف جميع الملفات نهائيًا من القرص!",
+    alert_fill_brief: "يرجى ملء جميع حقول موجز المشروع قبل إطلاق دورة المعالجة!",
+
+    // Dynamic Lists translations
+    empty_keys: "لا توجد مفاتيح محفوظة. أضف مفتاحًا أعلاه!",
+    key_active: "نشط",
+    key_inactive: "غير نشط / معطل",
+    errors: "الأخطاء",
+    btn_reset: "إعادة تعيين",
+    empty_projects: "لم يتم العثور على مشاريع. ابدأ بناء موقعك الآن!",
+    proj_ready: "جاهز",
+    proj_building: "جاري البناء",
+    qa_rating: "تقييم الجودة",
+    files: "الملفات",
+    btn_open_sandbox: "افتح بيئة العمل",
+    btn_delete: "حذف",
+
+    // Dynamic Badges & Stats
+    active_keys: "مفاتيح نشطة",
+    tokens_used: "رمز مستخدم (Tokens)",
+    active_model_desc: "مجموعة تدوير مفاتيح API • النموذج النشط: devstral-2512",
+
+    // Dynamic Progress / Self-healing
+    progress_key_check: "التحقق من جاهزية مجموعة مفاتيح API...",
+    progress_digest: "تحليل مدخلات ومعايير المشروع وتحميل محرك الذكاء الاصطناعي...",
+    progress_research: "إجراء أبحاث السوق والمنافسين بشكل مستقل...",
+    progress_architecture: "تصميم هيكلية الموقع والصفحات عبر Mistral...",
+    progress_css: "تصميم التنسيقات الجمالية وعناصر واجهة المستخدم...",
+    progress_config: "كتابة ملف إعدادات الخادم المشترك PHP...",
+    progress_generation: "توليد الكود المصدري لصفحات الموقع بالكامل...",
+    progress_page: "توليد الكود التفاعلي لصفحة: ",
+    progress_persistence: "حفظ وتثبيت الملفات البرمجية داخل بيئة العمل...",
+    progress_qa: "إجراء فحص الجودة البرمجية واكتشاف الأخطاء تلقائيًا...",
+    progress_healing: "تصحيح المشكلة البرمجية في صفحة ",
+    progress_seo: "إعداد معايير محركات البحث SEO وملفات Sitemap...",
+    progress_sandbox: "نشر وتدشين الموقع في بيئة المعاينة التفاعلية...",
+    healing_banner_status: "جاري تصحيح أخطاء بناء PHP وتعديل انسيابية التنسيقات...",
+    correcting: "جاري تصحيح",
+    in_file: "في",
+    pass: "المحاولة",
+    iteration: "المحاولة",
+
+    // Select option translations
+    opt_saas: "⚡ تطبيق ويب / SaaS",
+    opt_blog: "📝 مدونة / مجلة",
+    opt_store: "🛒 متجر إلكتروني",
+    opt_portfolio: "🎨 معرض أعمال / وكالة",
+    opt_landing: "🚀 صفحة هبوط تسويقية",
+    opt_corporate: "🏢 موقع شركات / أعمال",
+    opt_en: "الإنجليزية",
+    opt_ar: "العربية (RTL)",
+    opt_fr: "الفرنسية",
+    opt_es: "الإسبانية",
+    opt_de: "الألمانية",
+    opt_vanilla: "Vanilla CSS (عصري، فاخر)",
+    opt_tailwind: "Tailwind CSS (إطار عمل مرن)",
+    opt_bootstrap: "Bootstrap 5 (منظم ونظيف)"
   }
 };
 
 let currentLang = 'en';
+
+function t(key) {
+  if (TRANSLATIONS[currentLang] && TRANSLATIONS[currentLang][key]) {
+    return TRANSLATIONS[currentLang][key];
+  }
+  return TRANSLATIONS['en'][key] || key;
+}
 
 function setUILang(lang) {
   currentLang = lang;
@@ -915,6 +1077,17 @@ function setUILang(lang) {
       el.textContent = TRANSLATIONS[lang][key];
     }
   });
+
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    const key = el.getAttribute('data-i18n-placeholder');
+    if (TRANSLATIONS[lang] && TRANSLATIONS[lang][key]) {
+      el.setAttribute('placeholder', TRANSLATIONS[lang][key]);
+    }
+  });
+
+  // Re-load lists to update texts
+  if (typeof loadKeys === 'function') loadKeys().catch(() => {});
+  if (typeof loadProjects === 'function') loadProjects().catch(() => {});
 }
 
 // Default page names mapping
@@ -939,11 +1112,11 @@ function updateDefaultPages() {
 const PIPELINE_STAGES = [
   { id: 'key_check', label: 'API Key Rotator & Readiness' },
   { id: 'brief_digest', label: 'Brief Digestion & AI Modeling' },
+  { id: 'niche_research', label: 'Autonomous Niche & Competitor Research' },
   { id: 'arch_design', label: 'AI Structural & UI Architecture' },
   { id: 'css_shared', label: 'CSS Stylesheet & Layout Framework' },
   { id: 'config_shared', label: 'PHP Server Configuration Setup' },
   { id: 'page_generation', label: 'PHP Page Source Generation' },
-  { id: 'debug_inject', label: 'Debug Console Core Injection' },
   { id: 'file_persistance', label: 'Hard-Disk Persistent Writing' },
   { id: 'ai_qa_reflection', label: 'Autonomous AI QA Code Reflection' },
   { id: 'self_healing', label: 'Self-Correction & Healing Cycle' },
@@ -994,6 +1167,19 @@ function log(level, message) {
   `;
   consoleEl.appendChild(row);
   consoleEl.scrollTop = consoleEl.scrollHeight;
+
+  if (typeof activeProjectId !== 'undefined' && activeProjectId) {
+    fetch('api.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        action: 'append_log',
+        project_id: activeProjectId,
+        level: level,
+        message: message
+      })
+    }).catch(() => {});
+  }
 }
 
 function clearTerminalLogs() {
@@ -1017,6 +1203,76 @@ function switchTab(tabName) {
     document.getElementById('panelProjects').style.display = 'block';
     loadProjects();
     loadStats();
+  }
+}
+
+// -------------------------------------------------------------
+// AI JSON ROBUST PARSER & REPAIR ENGINE
+// -------------------------------------------------------------
+function cleanRawJsonText(text) {
+  let str = text.trim();
+  str = str.replace(/^```\s*json/i, ''); // strip ```json
+  str = str.replace(/^```(?:json)?\s*/i, '');
+  str = str.replace(/\s*```$/, '');
+  return str.trim();
+}
+
+function repairTruncatedJson(str) {
+  str = str.trim();
+  let inString = false;
+  let escapeNext = false;
+  let stack = [];
+  
+  for (let i = 0; i < str.length; i++) {
+    let char = str[i];
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+    if (char === '\\') {
+      escapeNext = true;
+      continue;
+    }
+    if (inString) {
+      if (char === '"') {
+        inString = false;
+      }
+    } else {
+      if (char === '"') {
+        inString = true;
+      } else if (char === '{') {
+        stack.push('}');
+      } else if (char === '[') {
+        stack.push(']');
+      } else if (char === '}') {
+        if (stack[stack.length - 1] === '}') stack.pop();
+      } else if (char === ']') {
+        if (stack[stack.length - 1] === ']') stack.pop();
+      }
+    }
+  }
+  
+  let repaired = str;
+  if (inString) {
+    repaired += '"';
+  }
+  while (stack.length > 0) {
+    repaired += stack.pop();
+  }
+  return repaired;
+}
+
+function safeJsonParse(text) {
+  let cleaned = cleanRawJsonText(text);
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    const repaired = repairTruncatedJson(cleaned);
+    try {
+      return JSON.parse(repaired);
+    } catch (err) {
+      throw new Error(`JSON parse and repair failed: ${err.message}. Raw prefix: ${text.substring(0, 150)}...`);
+    }
   }
 }
 
@@ -1080,7 +1336,7 @@ async function callMistralAPI(messages, maxTokens = 3500, jsonMode = true, stepN
     // Increment badges
     const currentTokensBadge = document.getElementById('totalTokensBadge');
     const existingVal = parseInt(currentTokensBadge.textContent.replace(/[^0-9]/g, '')) || 0;
-    currentTokensBadge.textContent = `${existingVal + tokens} Tokens Used`;
+    currentTokensBadge.textContent = `${existingVal + tokens} ${t('tokens_used')}`;
     
     return { content: resData.choices[0].message.content, tokens: tokens };
     
@@ -1104,7 +1360,7 @@ async function launchAutonomousBuild() {
   const monetize = document.getElementById('briefMonetize').value.trim();
   
   if (!title || !who || !target || !monetize) {
-    alert('Please fill out all mission brief fields before launching the agent loop!');
+    alert(t('alert_fill_brief'));
     return;
   }
   
@@ -1120,18 +1376,18 @@ async function launchAutonomousBuild() {
   try {
     // Stage 1: Key validation
     updateStageStatus('key_check', 'active');
-    setProgress(5, 'Checking API Key Pool readiness...');
+    setProgress(5, t('progress_key_check'));
     const keysCheck = await fetch('api.php?action=get_data').then(res => res.json());
     const activeKeysCount = keysCheck.keys?.filter(k => k.is_active === 1).length || 0;
     if (activeKeysCount === 0) {
-      throw new Error("No active API keys found in key pool. Go to 'Keys' tab to add a Mistral API Key first.");
+      throw new Error(t('empty_keys'));
     }
     log('ok', `API Key pool checked: ${activeKeysCount} active key(s) ready to host pipeline.`);
     updateStageStatus('key_check', 'completed');
     
     // Stage 2: Brief digest
     updateStageStatus('brief_digest', 'active');
-    setProgress(10, 'Digesting mission parameters & loading AI engine...');
+    setProgress(10, t('progress_digest'));
     const siteType = document.getElementById('siteType').value;
     const outputLang = document.getElementById('outputLang').value;
     const cssFramework = document.getElementById('cssFramework').value;
@@ -1160,9 +1416,52 @@ async function launchAutonomousBuild() {
     log('ok', `Database entry generated. Project ID: #${activeProjectId}. Workspace target: ${activeProjectFolder}`);
     updateStageStatus('brief_digest', 'completed');
     
+    // Stage: Niche Research
+    updateStageStatus('niche_research', 'active');
+    setProgress(15, t('progress_research'));
+    
+    const researchMessages = [
+      {
+        role: 'system',
+        content: `You are an expert business strategy analyst and competitor research agent. Respond ONLY in valid JSON. No markdown, no conversational text.
+        Your JSON must follow this exact format:
+        {
+          "market_segment": "Detailed explanation of the target market segment and opportunity",
+          "competitors": [
+            {"name": "Competitor Name", "strength": "What they do well", "weakness": "What they miss", "takeaway": "How we will beat them"}
+          ],
+          "essential_features": [
+            {"feature": "Feature Name", "reason": "Why it is critical for this site type", "implementation_idea": "How it should look/work on a web page"}
+          ],
+          "copywriting_hooks": {
+            "hero_headline": "Engaging high-converting headline in target language",
+            "hero_subheadline": "Compelling subheadline that details value proposition",
+            "trust_statement": "Short trust building tagline",
+            "cta_text": "Strong action-oriented button text"
+          }
+        }
+        Do competitor research for a ${siteType} web platform in language: ${outputLang}.`
+      },
+      {
+        role: 'user',
+        content: `Perform autonomous niche research based on this brief:
+        - BRAND IDENTITY: ${who}
+        - TARGET AUDIENCE: ${target}
+        - GOAL / MONETIZATION: ${monetize}
+        - SITE TYPE: ${siteType}
+        - LANGUAGE CODE: ${outputLang}`
+      }
+    ];
+    
+    const researchResp = await callMistralAPI(researchMessages, 2500, true, 'niche_research');
+    const activeNicheResearch = safeJsonParse(researchResp.content);
+    log('ok', `Niche competitor research completed! Segment: ${activeNicheResearch.market_segment}`);
+    log('ok', `Defined Copywriting headline: "${activeNicheResearch.copywriting_hooks.hero_headline}"`);
+    updateStageStatus('niche_research', 'completed');
+    
     // Stage 3: Architecture Generation
     updateStageStatus('arch_design', 'active');
-    setProgress(20, 'Structuring application directory & pages via Mistral...');
+    setProgress(22, t('progress_architecture'));
     
     const archMessages = [
       {
@@ -1185,18 +1484,21 @@ async function launchAutonomousBuild() {
       },
       {
         role: 'user',
-        content: `Generate site architecture based on this brief:
+        content: `Generate site architecture based on this brief and niche research:
         - BRAND IDENTITY: ${who}
         - TARGET AUDIENCE: ${target}
         - MONETIZATION/GOAL: ${monetize}
         - TYPE: ${siteType}
         - LANGUAGE CODE: ${outputLang}
-        - CSS FRAMEWORK CHOSEN: ${cssFramework}`
+        - CSS FRAMEWORK CHOSEN: ${cssFramework}
+        
+        NICHE RESEARCH ANALYSIS:
+        ${JSON.stringify(activeNicheResearch, null, 2)}`
       }
     ];
     
     const archResponse = await callMistralAPI(archMessages, 2500, true, 'architecture');
-    activeSiteArchitecture = JSON.parse(archResponse.content.trim());
+    activeSiteArchitecture = safeJsonParse(archResponse.content);
     log('ok', `AI Web Architecture crafted! Concept: "${activeSiteArchitecture.site_name}" - ${activeSiteArchitecture.pages.length} pages structured.`);
     
     // Store structural architecture JSON in DB
@@ -1214,7 +1516,7 @@ async function launchAutonomousBuild() {
     
     // Stage 4: CSS Stylesheet Generation
     updateStageStatus('css_shared', 'active');
-    setProgress(30, 'Styling aesthetic UI components...');
+    setProgress(30, t('progress_css'));
     let cssCode = '';
     if (cssFramework === 'vanilla') {
       const cssMessages = [
@@ -1229,9 +1531,32 @@ async function launchAutonomousBuild() {
           Must look extremely premium, high design standard, animations, hover effects, beautiful layouts.`
         }
       ];
-      const cssResp = await callMistralAPI(cssMessages, 2500, true, 'shared_css');
-      const cssData = JSON.parse(cssResp.content);
-      cssCode = cssData.css;
+      // Increased max tokens to 3500 to allow full CSS generation without truncation
+      const cssResp = await callMistralAPI(cssMessages, 3500, true, 'shared_css');
+      
+      let cssData;
+      try {
+        cssData = safeJsonParse(cssResp.content);
+      } catch (e) {
+        log('warn', `CSS JSON parsing failed: ${e.message}. Attempting regex extraction fallback.`);
+        let rawText = cleanRawJsonText(cssResp.content);
+        let match = rawText.match(/"css"\s*:\s*"([\s\S]*)/i);
+        if (match) {
+          let extracted = match[1];
+          let unescaped = extracted
+            .replace(/\\"/g, '"')
+            .replace(/\\'/g, "'")
+            .replace(/\\n/g, '\n')
+            .replace(/\\r/g, '\r')
+            .replace(/\\t/g, '\t')
+            .replace(/\\\\/g, '\\');
+          unescaped = unescaped.replace(/"\s*}\s*$/, '').replace(/"\s*$/, '');
+          cssData = { css: unescaped };
+        } else {
+          cssData = { css: rawText };
+        }
+      }
+      cssCode = cssData.css || '';
     } else if (cssFramework === 'tailwind') {
       cssCode = `/* Tailwind-CDN Utility injection CSS */
       :root {
@@ -1257,8 +1582,8 @@ async function launchAutonomousBuild() {
     
     // Stage 5: Config Shared File Setup
     updateStageStatus('config_shared', 'active');
-    setProgress(35, 'Writing global PHP platform context config...');
-    const configContent = `<?php
+    setProgress(35, t('progress_config'));
+    const configContent = `\x3c?php
     define('SITE_NAME', ${JSON.stringify(activeSiteArchitecture.site_name)});
     define('SITE_CONCEPT', ${JSON.stringify(activeSiteArchitecture.site_concept)});
     define('COLOR_PRIMARY', ${JSON.stringify(activeSiteArchitecture.colors.primary)});
@@ -1267,7 +1592,7 @@ async function launchAutonomousBuild() {
     define('CSS_FRAMEWORK', ${JSON.stringify(cssFramework)});
     define('LANG_CODE', ${JSON.stringify(outputLang)});
     define('DEBUG_MODE', isset($_GET['debug']));
-    ?>`;
+    ?\x3e`;
     
     await fetch('api.php', {
       method: 'POST',
@@ -1283,7 +1608,7 @@ async function launchAutonomousBuild() {
     
     // Stage 6: Generation of PHP Pages (Autonomous Loop)
     updateStageStatus('page_generation', 'active');
-    setProgress(40, `Generating application pages source code...`);
+    setProgress(40, t('progress_generation'));
     
     const pagesList = activeSiteArchitecture.pages;
     const generatedPagesMemory = {};
@@ -1291,7 +1616,7 @@ async function launchAutonomousBuild() {
     for (let i = 0; i < pagesList.length; i++) {
       const page = pagesList[i];
       const pageProgressPct = 40 + Math.round((i / pagesList.length) * 30);
-      setProgress(pageProgressPct, `Generating dynamic code for page: ${page.filename}...`);
+      setProgress(pageProgressPct, t('progress_page') + page.filename + '...');
       
       const pageMessages = [
         {
@@ -1307,6 +1632,8 @@ async function launchAutonomousBuild() {
           - Link dynamically generated stylesheet style.css.
           - Output language: ${outputLang} (if Arabic, set dir="rtl" on <html> and use Outfit/Tajawal fonts).
           - Embed beautiful, descriptive bilingual copywriting (no generic Lorem Ipsum!).
+          - Use these copywriting hooks specifically in your content: ${JSON.stringify(activeNicheResearch.copywriting_hooks)}.
+          - Make sure to integrate these essential competitor-beat features: ${JSON.stringify(activeNicheResearch.essential_features)}.
           - If a contact page, write solid backend form submission script handling simulation.
           - Provide navigation linking to all these pages: ${pagesList.map(p => p.filename).join(', ')}.
           - Design style standard: premium glassmorphism dark theme, interactive cards, grid layouts.`
@@ -1317,6 +1644,7 @@ async function launchAutonomousBuild() {
           - Page title: ${page.title}
           - Page details: ${page.desc}
           - Brand Identity / Brief: ${who}
+          - Target Audience: ${target}
           - CSS Framework options: ${cssFramework} (If Tailwind, include Tailwind play CDN script in <head>; if Bootstrap, include Bootstrap link & bundles).`
         }
       ];
@@ -1328,7 +1656,7 @@ async function launchAutonomousBuild() {
       while (generateRetry < maxRetries) {
         try {
           const pageResp = await callMistralAPI(pageMessages, 3500, true, `page_${page.filename}`);
-          pageData = JSON.parse(pageResp.content.trim());
+          pageData = safeJsonParse(pageResp.content);
           if (!pageData.code) throw new Error("JSON structure did not contain code parameter.");
           break; // Success!
         } catch (err) {
@@ -1347,14 +1675,12 @@ async function launchAutonomousBuild() {
     
     updateStageStatus('page_generation', 'completed');
     
-    // Stage 7: Debug Injection
-    updateStageStatus('debug_inject', 'active');
-    setProgress(75, 'Injecting interactive local server debugger inside pages...');
-    
+    // Inline Debug Injection (merged from standalone step)
+    log('sys', 'Injecting interactive local server debugger inside pages...');
     for (const [fname, code] of Object.entries(generatedPagesMemory)) {
       if (fname.endsWith('.php') && code.includes('</body>')) {
         const debuggerCode = `
-        <?php if(isset($_GET['debug'])): ?>
+        \x3c?php if(isset(\$_GET['debug'])): ?\x3e
         <div id="autocoder-debug-pane" style="position:fixed;bottom:0;left:0;right:0;background:#05070a;border-top:2px solid var(--accent, #00e5c3);color:#e2e8f0;padding:12px 20px;font-family:monospace;font-size:11px;z-index:99999;box-shadow:0 -10px 30px rgba(0,0,0,0.8);max-height:220px;overflow-y:auto;text-align:left;direction:ltr;">
           <div style="display:flex;justify-content:between;align-items:center;margin-bottom:8px;border-bottom:1px solid #1e293b;padding-bottom:6px;">
             <strong style="color:var(--accent, #00e5c3);">⚙️ AUTO-DEBUG MONITOR &mdash; ${fname}</strong>
@@ -1363,30 +1689,28 @@ async function launchAutonomousBuild() {
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
             <div>
               <strong>PHP Context Info:</strong><br>
-              - PHP Version: <?php echo PHP_VERSION; ?><br>
-              - Memory Usage: <?php echo round(memory_get_usage() / 1024 / 1024, 2); ?> MB<br>
-              - Execution Time: <?php echo round(microtime(true) - $_SERVER["REQUEST_TIME_FLOAT"], 4); ?>s
+              - PHP Version: \x3c?php echo PHP_VERSION; ?\x3e<br>
+              - Memory Usage: \x3c?php echo round(memory_get_usage() / 1024 / 1024, 2); ?\x3e MB<br>
+              - Execution Time: \x3c?php echo round(microtime(true) - \$_SERVER["REQUEST_TIME_FLOAT"], 4); ?\x3es
             </div>
             <div>
               <strong>Server Environment Variables:</strong><br>
-              - Request Method: <?php echo $_SERVER['REQUEST_METHOD']; ?><br>
-              - User Agent: <?php echo htmlspecialchars($_SERVER['HTTP_USER_AGENT']); ?><br>
-              - Sandbox Workspace Path: <?php echo htmlspecialchars(dirname(__FILE__)); ?>
+              - Request Method: \x3c?php echo \$_SERVER['REQUEST_METHOD']; ?\x3e<br>
+              - User Agent: \x3c?php echo htmlspecialchars(\$_SERVER['HTTP_USER_AGENT']); ?\x3e<br>
+              - Sandbox Workspace Path: \x3c?php echo htmlspecialchars(dirname(__FILE__)); ?\x3e
             </div>
           </div>
         </div>
-        <?php endif; ?>
+        \x3c?php endif; ?\x3e
         `;
         generatedPagesMemory[fname] = code.replace('</body>', `${debuggerCode}\n</body>`);
       }
     }
+    log('ok', 'AI Debug toolset successfully injected to page footer modules.');
     
-    log('ok', `AI Debug toolset successfully injected to footer modules.`);
-    updateStageStatus('debug_inject', 'completed');
-    
-    // Stage 8: Files Persistence
+    // Stage 7: Files Persistence
     updateStageStatus('file_persistance', 'active');
-    setProgress(80, 'Saving compiled files to sandbox folder...');
+    setProgress(75, t('progress_persistence'));
     
     let fileCount = 0;
     for (const [fname, content] of Object.entries(generatedPagesMemory)) {
@@ -1409,66 +1733,91 @@ async function launchAutonomousBuild() {
         log('write', `File successfully compiled: ${fname} (${saveResp.bytes} bytes saved)`);
       }
     }
-    
     updateStageStatus('file_persistance', 'completed');
     
-    // Stage 9: AI QA Code Reflection
+    // Stage 8: AI QA Code Reflection & Stage 9: Self-Healing (Autoresearch-inspired Iterative QA Optimization Loop)
     updateStageStatus('ai_qa_reflection', 'active');
-    setProgress(85, 'Performing autonomous code quality checks...');
+    setProgress(80, t('progress_qa'));
     
-    const qaMessages = [
-      {
-        role: 'system',
-        content: `You are an expert senior code QA and automation tester.
-        Inspect the generated code files. Detect structural errors, syntax glitches, broken relative links, incomplete markup, or broken formatting tags.
-        Return ONLY valid JSON format:
+    let baselinePages = JSON.parse(JSON.stringify(generatedPagesMemory));
+    let baselineScore = 0;
+    let issuesDetected = [];
+    let iteration = 1;
+    const maxIterations = 5;
+    
+    while (iteration <= maxIterations) {
+      log('sys', `═══════════════════════════════════════════════════════════`);
+      log('sys', `🔍 QA OPTIMIZATION LOOP - ITERATION #${iteration} / ${maxIterations}`);
+      log('sys', `═══════════════════════════════════════════════════════════`);
+      
+      // Perform QA Reflection on baselinePages
+      const qaMessages = [
         {
-          "issues_detected": [
-            {"filename": "index.php", "issue": "detailed issue", "severity": "high|medium|low", "solution_code": "...exact PHP/HTML code to fix it..."}
-          ],
-          "qa_score": 95,
-          "summary": "Overall evaluation summary"
-        }`
-      },
-      {
-        role: 'user',
-        content: `Inspect these files generated for concept: ${activeSiteArchitecture.site_concept}.
-        
-        ${Object.entries(generatedPagesMemory).map(([f, code]) => `
-        --- FILE: ${f} ---
-        ${code.substring(0, 2000)}
-        --- END ---
-        `).join('\n')}`
+          role: 'system',
+          content: `You are an expert senior code QA and automation tester.
+          Inspect the generated code files. Detect structural errors, syntax glitches, broken relative links, incomplete markup, or broken formatting tags.
+          Return ONLY valid JSON format:
+          {
+            "issues_detected": [
+              {"filename": "index.php", "issue": "detailed issue", "severity": "high|medium|low", "solution_code": "...exact PHP/HTML code to fix it..."}
+            ],
+            "qa_score": 95,
+            "summary": "Overall evaluation summary"
+          }`
+        },
+        {
+          role: 'user',
+          content: `Inspect these files generated for concept: ${activeSiteArchitecture.site_concept}.
+          
+          ${Object.entries(baselinePages).map(([f, code]) => `
+          --- FILE: ${f} ---
+          ${code.substring(0, 2000)}
+          --- END ---
+          `).join('\n')}`
+        }
+      ];
+      
+      const qaResp = await callMistralAPI(qaMessages, 3000, true, `reflection_iter_${iteration}`);
+      const qaReport = safeJsonParse(qaResp.content);
+      
+      if (iteration === 1) {
+        baselineScore = qaReport.qa_score;
+        issuesDetected = qaReport.issues_detected;
+        log('ok', `Initial QA Inspection complete. Baseline Score: ${baselineScore}/100. Issues detected: ${issuesDetected.length}`);
+      } else {
+        log('ok', `QA iteration #${iteration} score: ${qaReport.qa_score}/100. Remaining issues: ${qaReport.issues_detected.length}`);
       }
-    ];
-    
-    const qaResp = await callMistralAPI(qaMessages, 3000, true, 'reflection');
-    const qaReport = JSON.parse(qaResp.content.trim());
-    log('ok', `QA Inspection complete. Evaluation Score: ${qaReport.qa_score}/100. Issues detected: ${qaReport.issues_detected.length}`);
-    
-    await fetch('api.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        action: 'update_project',
-        id: activeProjectId,
-        qa_score: qaReport.qa_score,
-        file_count: fileCount
-      })
-    });
-    
-    updateStageStatus('ai_qa_reflection', 'completed');
-    
-    // Stage 10: Autonomous Self-Healing / Auto-Correction Cycle
-    updateStageStatus('self_healing', 'active');
-    
-    if (qaReport.issues_detected.length > 0) {
+      
+      // Update database with latest score
+      await fetch('api.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          action: 'update_project',
+          id: activeProjectId,
+          qa_score: qaReport.qa_score,
+          file_count: fileCount
+        })
+      });
+      
+      // If we achieved score >= 95 or there are no issues, we are done!
+      if (qaReport.issues_detected.length === 0 || qaReport.qa_score >= 95) {
+        baselineScore = qaReport.qa_score;
+        issuesDetected = qaReport.issues_detected;
+        log('ok', `🎉 High Quality Metric Achieved: Score ${qaReport.qa_score}/100! Exiting QA loop.`);
+        break;
+      }
+      
+      // Activate Self-Healing stage visual indicators
+      updateStageStatus('self_healing', 'active');
       document.getElementById('healingBanner').style.display = 'flex';
-      log('heal', `⚠️ Self-Healing active! Resolving ${qaReport.issues_detected.length} critical QA tickets autonomously.`);
+      log('heal', `⚠️ Self-Healing Iteration #${iteration} Active! Resolving ${qaReport.issues_detected.length} critical QA tickets autonomously.`);
+      
+      let workPages = JSON.parse(JSON.stringify(baselinePages));
       
       for (const issue of qaReport.issues_detected) {
-        setProgress(90, `Healing module ${issue.filename} autonomously...`);
-        document.getElementById('healingStatus').textContent = `Correcting: ${issue.issue} in ${issue.filename}`;
+        setProgress(80 + iteration, t('progress_healing') + issue.filename + ` (${t('iteration')} #${iteration})...`);
+        document.getElementById('healingStatus').textContent = t('correcting') + ': ' + issue.issue + ' ' + t('in_file') + ' ' + issue.filename + ` (${t('pass')} ${iteration}/${maxIterations})`;
         
         log('heal', `Self-Healing code block replacement for "${issue.filename}" due to: ${issue.issue}`);
         
@@ -1491,54 +1840,105 @@ async function launchAutonomousBuild() {
             ERROR DESCRIPTION: ${issue.issue}
             PROPOSED FIX: ${issue.solution_code}
             EXISTING CODE CONTENT:
-            ${generatedPagesMemory[issue.filename]}`
+            ${workPages[issue.filename] || ''}`
           }
         ];
         
         try {
-          const healResp = await callMistralAPI(healMessages, 3500, true, `healing_${issue.filename}`);
-          const healedData = JSON.parse(healResp.content.trim());
+          const healResp = await callMistralAPI(healMessages, 3500, true, `healing_${issue.filename}_iter_${iteration}`);
+          const healedData = safeJsonParse(healResp.content);
           if (healedData.fixed_code) {
-            generatedPagesMemory[issue.filename] = healedData.fixed_code;
-            
-            // Persist healed code to disk
-            await fetch('api.php', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                action: 'save_file',
-                path: `${activeProjectFolder}/${issue.filename}`,
-                content: healedData.fixed_code
-              })
-            });
-            log('ok', `Healed & overwritten on disk: ${issue.filename}`);
+            workPages[issue.filename] = healedData.fixed_code;
+            log('ok', `Hypothesis generated successfully for: ${issue.filename}`);
           }
         } catch (healErr) {
-          log('err', `Self-healing execution failed for ${issue.filename}: ${healErr.message}`);
+          log('err', `Self-healing fix failed for ${issue.filename}: ${healErr.message}`);
         }
       }
       
-      document.getElementById('healingBanner').style.display = 'none';
-      log('ok', 'All identified QA issues successfully resolved via autonomous healing cycle!');
-    } else {
-      log('ok', 'Code evaluated at top quality metrics! Bypassing self-healing loops.');
+      // Re-evaluate workPages using QA model
+      log('sys', `🧪 Testing updated code quality hypothesis...`);
+      const testMessages = [
+        {
+          role: 'system',
+          content: `You are an expert senior code QA and automation tester.
+          Inspect the generated code files. Detect structural errors, syntax glitches, broken relative links, incomplete markup, or broken formatting tags.
+          Return ONLY valid JSON format:
+          {
+            "issues_detected": [
+              {"filename": "index.php", "issue": "detailed issue", "severity": "high|medium|low", "solution_code": "...exact PHP/HTML code to fix it..."}
+            ],
+            "qa_score": 95,
+            "summary": "Overall evaluation summary"
+          }`
+        },
+        {
+          role: 'user',
+          content: `Inspect these files generated for concept: ${activeSiteArchitecture.site_concept}.
+          
+          ${Object.entries(workPages).map(([f, code]) => `
+          --- FILE: ${f} ---
+          ${code.substring(0, 2000)}
+          --- END ---
+          `).join('\n')}`
+        }
+      ];
+      
+      const testResp = await callMistralAPI(testMessages, 3000, true, `reflection_test_iter_${iteration}`);
+      const testReport = safeJsonParse(testResp.content);
+      
+      // Compare scores
+      if (testReport.qa_score > baselineScore) {
+        const diff = testReport.qa_score - baselineScore;
+        log('ok', `📈 SUCCESS: QA Score optimized from ${baselineScore} to ${testReport.qa_score} (+${diff})! Committing changes.`);
+        
+        // Save the improved files in memory and persist them to disk!
+        baselinePages = JSON.parse(JSON.stringify(workPages));
+        generatedPagesMemory = JSON.parse(JSON.stringify(workPages));
+        baselineScore = testReport.qa_score;
+        issuesDetected = testReport.issues_detected;
+        
+        // Persist code to disk
+        for (const [fname, content] of Object.entries(baselinePages)) {
+          await fetch('api.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'save_file',
+              path: `${activeProjectFolder}/${fname}`,
+              content: content
+            })
+          });
+        }
+        log('ok', `Overwritten baseline files on disk with optimized versions.`);
+      } else {
+        log('warn', `📉 ROLLBACK: QA Score is ${testReport.qa_score}/100, which did not improve baseline of ${baselineScore}/100. Discarding changes.`);
+      }
+      
+      iteration++;
     }
+    
+    // Finalize Stages 9 & 10
+    document.getElementById('healingBanner').style.display = 'none';
+    updateStageStatus('ai_qa_reflection', 'completed');
     updateStageStatus('self_healing', 'completed');
+    
+    log('ok', `Autonomous Healing Cycle finished. Final Site QA Score: ${baselineScore}/100.`);
     
     // Stage 11: SEO Engine Robots + Sitemap Generation
     updateStageStatus('seo_engine', 'active');
-    setProgress(95, 'Structuring index crawlers SEO parameters...');
+    setProgress(95, t('progress_seo'));
     
     const robotsTxt = `User-agent: *
 Disallow: /config.php
 Disallow: /style.css
-Sitemap: http://<?php echo $_SERVER['HTTP_HOST']; ?>/${activeProjectFolder}/sitemap.xml`;
+Sitemap: http://\x3c?php echo \$_SERVER['HTTP_HOST']; ?\x3e/${activeProjectFolder}/sitemap.xml`;
 
-    const sitemapXml = `<?xml version="1.0" encoding="UTF-8"?>
+    const sitemapXml = '<' + '?xml version="1.0" encoding="UTF-8"?' + '>\n' + `
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   ${pagesList.map(p => `
   <url>
-    <loc>http://<?php echo $_SERVER['HTTP_HOST']; ?>/${activeProjectFolder}/${p.filename}</loc>
+    <loc>http://\x3c?php echo \$_SERVER['HTTP_HOST']; ?\x3e/${activeProjectFolder}/${p.filename}</loc>
     <lastmod>${new Date().toISOString().split('T')[0]}</lastmod>
     <changefreq>monthly</changefreq>
     <priority>${p.filename === 'index.php' ? '1.0' : '0.8'}</priority>
@@ -1571,7 +1971,7 @@ Sitemap: http://<?php echo $_SERVER['HTTP_HOST']; ?>/${activeProjectFolder}/site
     
     // Stage 12: Launch / Deployment
     updateStageStatus('sandbox_publish', 'active');
-    setProgress(100, 'Deploying sandbox parameters live...');
+    setProgress(100, t('progress_sandbox'));
     
     await fetch('api.php', {
       method: 'POST',
@@ -1592,7 +1992,7 @@ Sitemap: http://<?php echo $_SERVER['HTTP_HOST']; ?>/${activeProjectFolder}/site
     updateStageStatus('sandbox_publish', 'completed');
     
     // Launch iframe preview
-    loadProjectPreview(activeProjectFolder, pagesList.map(p => p.filename));
+    loadProjectPreview(activeProjectFolder, pagesList.map(p => p.filename), activeProjectId);
     
   } catch (error) {
     log('err', `FATAL PIPELINE HALT: ${error.message}`);
@@ -1620,8 +2020,22 @@ function setProgress(pct, labelText) {
 // -------------------------------------------------------------
 let previewPagesList = [];
 let previewFolderRoot = '';
+let currentPreviewProjectId = null;
 
-function loadProjectPreview(folderPath, pages) {
+function downloadProjectZip() {
+  const id = currentPreviewProjectId || activeProjectId;
+  if (id) {
+    window.location.href = `download.php?id=${id}`;
+  } else {
+    alert("No active project to download!");
+  }
+}
+
+function loadProjectPreview(folderPath, pages, projectId = null) {
+  currentPreviewProjectId = projectId;
+  const zipBtn = document.getElementById('downloadZipBtn');
+  if (zipBtn) zipBtn.style.display = projectId ? 'inline-block' : 'none';
+
   previewFolderRoot = folderPath;
   previewPagesList = pages;
   
@@ -1657,7 +2071,7 @@ async function addApiKey() {
   const val = document.getElementById('keyVal').value.trim();
   
   if (!label || !val) {
-    alert('Please enter label and API key values!');
+    alert(t('alert_enter_key'));
     return;
   }
   
@@ -1700,7 +2114,7 @@ async function testApiKey(keyVal) {
 }
 
 async function deleteApiKey(id) {
-  if (!confirm('Are you sure you want to delete this API Key?')) return;
+  if (!confirm(t('alert_delete_key'))) return;
   await fetch(`api.php?action=delete_key&id=${id}`);
   loadKeys();
   log('sys', `API key ID #${id} deleted.`);
@@ -1716,11 +2130,12 @@ async function loadKeys() {
   const data = await fetch('api.php?action=get_data').then(res => res.json());
   const list = document.getElementById('keysList');
   
-  document.getElementById('totalKeyBadge').textContent = `${data.keys.filter(k => k.is_active === 1).length} Active Keys`;
-  document.getElementById('totalTokensBadge').textContent = `${data.stats.tokens_total} Tokens Used`;
+  const activeKeysCount = data.keys.filter(k => k.is_active === 1).length;
+  document.getElementById('totalKeyBadge').textContent = `${activeKeysCount} ${t('active_keys')}`;
+  document.getElementById('totalTokensBadge').textContent = `${data.stats.tokens_total} ${t('tokens_used')}`;
   
   if (!data.keys || data.keys.length === 0) {
-    list.innerHTML = `<div class="empty-state">No keys saved. Add one above!</div>`;
+    list.innerHTML = `<div class="empty-state">${t('empty_keys')}</div>`;
     return;
   }
   
@@ -1730,11 +2145,11 @@ async function loadKeys() {
         <strong style="font-size:0.85rem;">${k.label}</strong>
         <div style="font-size:0.7rem; color:var(--text-secondary); font-family:var(--font-mono);">${k.key_masked}</div>
         <div style="font-size:0.65rem; color:${k.is_active ? 'var(--success)' : 'var(--error)'};">
-          ${k.is_active ? '● Active' : '● Inactive / Suspended'} (Errors: ${k.error_count})
+          ${k.is_active ? '● ' + t('key_active') : '● ' + t('key_inactive')} (${t('errors')}: ${k.error_count})
         </div>
       </div>
       <div style="display:flex; gap:6px;">
-        <button class="btn btn-outline" style="padding:4px 8px; font-size:0.7rem;" onclick="resetApiKeyErrors(${k.id})">↻ Reset</button>
+        <button class="btn btn-outline" style="padding:4px 8px; font-size:0.7rem;" onclick="resetApiKeyErrors(${k.id})">↻ ${t('btn_reset')}</button>
         <button class="btn btn-danger" style="padding:4px 8px; font-size:0.7rem;" onclick="deleteApiKey(${k.id})">✗</button>
       </div>
     </div>
@@ -1746,7 +2161,7 @@ async function loadProjects() {
   const list = document.getElementById('projectsList');
   
   if (!data.projects || data.projects.length === 0) {
-    list.innerHTML = `<div class="empty-state">No projects found. Launch a build!</div>`;
+    list.innerHTML = `<div class="empty-state">${t('empty_projects')}</div>`;
     return;
   }
   
@@ -1760,20 +2175,20 @@ async function loadProjects() {
           </span>
         </div>
         <span style="font-size:0.75rem; color:${p.status === 'done' ? 'var(--success)' : 'var(--warning)'}; font-weight:600;">
-          ${p.status === 'done' ? '✓ Ready' : '● Building'}
+          ${p.status === 'done' ? '✓ ' + t('proj_ready') : '● ' + t('proj_building')}
         </span>
       </div>
       
       <div style="font-size:0.7rem; color:var(--text-secondary); font-family:var(--font-mono); display:flex; justify-content:space-between;">
-        <span>QA Rating: ${p.qa_score}/100</span>
-        <span>Files: ${p.file_count}</span>
+        <span>${t('qa_rating')}: ${p.qa_score}/100</span>
+        <span>${t('files')}: ${p.file_count}</span>
       </div>
 
       <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px; border-top:1px solid var(--border); padding-top:8px;">
         <span style="font-size:0.65rem; color:var(--text-muted);">${p.created_at}</span>
         <div style="display:flex; gap:6px;">
-          <button class="btn btn-primary" style="padding:4px 8px; font-size:0.7rem;" onclick="loadPreviewFromHistory('${p.folder}', ${p.id})">Open Sandbox</button>
-          <button class="btn btn-danger" style="padding:4px 8px; font-size:0.7rem;" onclick="deleteProject(${p.id})">Delete</button>
+          <button class="btn btn-primary" style="padding:4px 8px; font-size:0.7rem;" onclick="loadPreviewFromHistory('${p.folder}', ${p.id})">${t('btn_open_sandbox')}</button>
+          <button class="btn btn-danger" style="padding:4px 8px; font-size:0.7rem;" onclick="deleteProject(${p.id})">${t('btn_delete')}</button>
         </div>
       </div>
     </div>
@@ -1786,15 +2201,15 @@ async function loadPreviewFromHistory(folderPath, projectId) {
   if (project.project && project.project.arch_json) {
     const arch = JSON.parse(project.project.arch_json);
     const pages = arch.pages.map(p => p.filename);
-    loadProjectPreview(folderPath, pages);
+    loadProjectPreview(folderPath, pages, projectId);
   } else {
     // Default fallback
-    loadProjectPreview(folderPath, ['index.php']);
+    loadProjectPreview(folderPath, ['index.php'], projectId);
   }
 }
 
 async function deleteProject(id) {
-  if (!confirm('Are you sure you want to delete this project? This will completely clear all files on disk!')) return;
+  if (!confirm(t('alert_delete_project'))) return;
   await fetch(`api.php?action=delete_project&id=${id}`);
   loadProjects();
   log('sys', `Project ID #${id} deleted from databases & disk.`);
