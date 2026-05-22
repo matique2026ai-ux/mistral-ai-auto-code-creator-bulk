@@ -95,7 +95,41 @@ if ($action === 'record_usage') {
     exit;
 }
 
-// ---- SAVE FILE ----
+// ---- DELETE KEY ----
+if ($action === 'delete_key') {
+    $id = intval($_POST['id'] ?? $jsonBody['id'] ?? 0);
+    if ($id) {
+        $db->prepare("DELETE FROM api_keys WHERE id = ?")->execute([$id]);
+        echo json_encode(['success' => true]);
+    } else {
+        echo json_encode(['error' => 'ID manquant']);
+    }
+    exit;
+}
+
+// ---- RESET KEY ERRORS ----
+if ($action === 'reset_key_errors') {
+    $id = intval($_POST['id'] ?? $jsonBody['id'] ?? 0);
+    if ($id) {
+        $db->prepare("UPDATE api_keys SET error_count = 0, is_active = 1 WHERE id = ?")->execute([$id]);
+        echo json_encode(['success' => true]);
+    } else {
+        echo json_encode(['error' => 'ID manquant']);
+    }
+    exit;
+}
+
+// ---- KEY STATS (per-key token usage) ----
+if ($action === 'get_key_stats') {
+    $id = intval($_POST['id'] ?? $jsonBody['id'] ?? $_GET['id'] ?? 0);
+    $stats = $db->prepare("SELECT SUM(tokens_used) as total_tokens, COUNT(*) as total_calls FROM token_usage WHERE api_key_id = ?");
+    $stats->execute([$id]);
+    $row = $stats->fetch(PDO::FETCH_ASSOC);
+    echo json_encode(['stats' => $row]);
+    exit;
+}
+
+// ---- SAVE FILE (hardened) ----
 if ($action === 'save_file') {
     $path    = $jsonBody['path']    ?? $_POST['path']    ?? '';
     $content = $jsonBody['content'] ?? $_POST['content'] ?? '';
@@ -106,14 +140,23 @@ if ($action === 'save_file') {
     if (strpos($path, 'builds/') !== 0) {
         echo json_encode(['error' => 'Chemin non autorise: ' . $path]); exit;
     }
+    // Block path traversal attacks
+    if (preg_match('/(\.\.|\x00|:)/', $path)) {
+        echo json_encode(['error' => 'Chemin invalide (caracteres interdits)']); exit;
+    }
 
     $target = __DIR__ . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $path);
-    $dir    = dirname($target);
-
-    if (!is_dir($dir)) {
-        if (!mkdir($dir, 0755, true)) {
-            echo json_encode(['error' => 'Impossible de creer le dossier: ' . $dir]); exit;
+    // Verify resolved path is still under __DIR__/builds/
+    $realBase = realpath(__DIR__ . '/builds');
+    $targetDir = dirname($target);
+    if (!is_dir($targetDir)) {
+        if (!mkdir($targetDir, 0755, true)) {
+            echo json_encode(['error' => 'Impossible de creer le dossier: ' . $targetDir]); exit;
         }
+    }
+    $realTarget = realpath($targetDir);
+    if ($realBase && $realTarget && strpos($realTarget, $realBase) !== 0) {
+        echo json_encode(['error' => 'Tentative traversal bloquee']); exit;
     }
 
     $bytes = file_put_contents($target, $content);

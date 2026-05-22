@@ -627,14 +627,41 @@ async function loadKeysData() {
       <td>${k.is_active==1 ? '<span class="pill pill-ok">active</span>' : '<span class="pill pill-err">désactivée</span>'}</td>
       <td><span class="${k.error_count > 0 ? 'pill pill-err' : ''}">${k.error_count || 0}</span></td>
       <td style="color:var(--muted)">${k.last_used || 'jamais'}</td>
-      <td><button class="btn btn-outline" style="padding:4px 10px;font-size:.7rem;" onclick="testKeyById(${k.id})">tester</button></td>
+      <td style="display:flex;gap:4px;">
+        <button class="btn btn-outline" style="padding:4px 10px;font-size:.7rem;" onclick="resetKeyErrors(${k.id})" title="Réinitialiser les erreurs">↻ Reset</button>
+        <button class="btn btn-danger" style="padding:4px 10px;font-size:.7rem;" onclick="deleteKey(${k.id})" title="Supprimer">✗</button>
+      </td>
     </tr>
   `).join('');
 }
 
-async function testKeyById(id) {
-  // We just trigger a get_key + test
-  log('info', `Test de la clé #${id} sur devstral-2512...`);
+async function deleteKey(id) {
+  if (!confirm('Supprimer cette clé définitivement ?')) return;
+  const fd = new FormData();
+  fd.append('action', 'delete_key');
+  fd.append('id', id);
+  const res = await fetch('api.php', { method: 'POST', body: fd });
+  const data = await res.json();
+  if (data.success) {
+    showKeyMsg('✓ Clé supprimée', 'ok');
+    loadKeysData();
+  } else {
+    showKeyMsg('Erreur: ' + (data.error || 'inconnue'), 'err');
+  }
+}
+
+async function resetKeyErrors(id) {
+  const fd = new FormData();
+  fd.append('action', 'reset_key_errors');
+  fd.append('id', id);
+  const res = await fetch('api.php', { method: 'POST', body: fd });
+  const data = await res.json();
+  if (data.success) {
+    showKeyMsg('✓ Erreurs réinitialisées — clé réactivée', 'ok');
+    loadKeysData();
+  } else {
+    showKeyMsg('Erreur: ' + (data.error || 'inconnue'), 'err');
+  }
 }
 
 function formatNum(n) {
