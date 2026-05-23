@@ -9,7 +9,7 @@
  *   --title        Titre du projet (optionnel, défaut: extrait du prompt)
  *   --type         fullstack|mobile|api|static (défaut: fullstack)
  *   --frontend     react|next|vue|svelte|... (défaut: auto)
- *   --backend      node_express|fastapi_python|laravel_php|... (défaut: auto)
+ *   --backend      node_express|express_typescript|nestjs|fastapi_python|... (défaut: auto)
  *   --database     sqlite|postgresql|mysql|mongodb (défaut: sqlite)
  *   --css          tailwind|bootstrap|vanilla (défaut: tailwind)
  *   --lang         fr|en|ar|es|de|pt|zh|ja (défaut: fr)

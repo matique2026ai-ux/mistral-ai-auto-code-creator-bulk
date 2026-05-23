@@ -810,8 +810,8 @@ class PipelineEngine {
         $cmds = [];
 
         // Node.js / JS ecosystem
-        if (in_array($front, ['next','react','vue','nuxt','svelte','angular','astro','remix','react_native','html_css_js'])
-            || in_array($back, ['node_express','supabase','firebase'])) {
+        if (in_array($front, ['next','react','vue','nuxt','svelte','solid','qwik','angular','astro','remix','react_native','html_css_js'])
+            || in_array($back, ['node_express','express_typescript','nestjs','supabase','firebase'])) {
             $pkg = "$buildDir/package.json";
             if (file_exists($pkg)) {
                 $cmds[] = ['name' => 'npm_install', 'cmd' => 'npm install --legacy-peer-deps 2>&1', 'cwd' => $buildDir, 'optional' => false];
