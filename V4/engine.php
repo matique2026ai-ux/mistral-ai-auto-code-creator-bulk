@@ -82,6 +82,8 @@ class PipelineEngine {
     }
 
     private function progress(int $pct, string $label): void {
+        // Store progress in DB so polling UI can read it
+        appendLog($this->db, $this->projectId, 'progress', 'sys', "pct:{$pct} label:{$label}");
         echo json_encode(['type' => 'progress', 'pct' => $pct, 'label' => $label]) . "\n";
         if (ob_get_level()) ob_flush(); flush();
     }
@@ -655,7 +657,7 @@ class PipelineEngine {
             || in_array($back, ['node_express','supabase','firebase'])) {
             $pkg = "$buildDir/package.json";
             if (file_exists($pkg)) {
-                $cmds[] = ['name' => 'npm_install', 'cmd' => 'npm install 2>&1', 'cwd' => $buildDir, 'optional' => false];
+                $cmds[] = ['name' => 'npm_install', 'cmd' => 'npm install --legacy-peer-deps 2>&1', 'cwd' => $buildDir, 'optional' => false];
                 $cmds[] = ['name' => 'npm_build',   'cmd' => 'npm run build 2>&1',  'cwd' => $buildDir, 'optional' => false];
                 // Try tsc check if typescript is present
                 $cmds[] = ['name' => 'tsc_check',   'cmd' => 'npx tsc --noEmit 2>&1', 'cwd' => $buildDir, 'optional' => true];

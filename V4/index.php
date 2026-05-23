@@ -642,18 +642,20 @@ async function loadProjects() {
   const el = document.getElementById('projectsList');
   if (!projects.length) { el.innerHTML = '<div class="empty-state">Aucun projet. Lancez un build !</div>'; return; }
   el.innerHTML = projects.map(p => `
-    <div class="item-row" onclick="showProjectDetail(${p.id})" style="cursor:pointer;">
-      <div>
+    <div class="item-row" style="cursor:pointer;">
+      <div onclick="showProjectDetail(${p.id})" style="flex:1;min-width:0;">
         <strong style="font-size:.85rem;">${p.title}</strong>
         <div style="font-size:.7rem;color:var(--text-3);">
           <span class="stack-tag">${p.frontend}</span>
           <span class="stack-tag">${p.backend}</span>
+          ${p.build_validated ? '<span class="pill pill-green">✅ build</span>' : ''}
           ${p.qa_score > 0 ? `<span class="pill pill-green">${p.qa_score}/100</span>` : ''}
         </div>
       </div>
-      <div style="text-align:right;">
+      <div style="text-align:right;display:flex;align-items:center;gap:4px;">
         <span class="pill ${p.status === 'done' ? 'pill-green' : p.status === 'failed' ? 'pill-red' : 'pill-blue'}">${p.status}</span>
-        <div style="font-size:.65rem;color:var(--text-3);margin-top:4px;">${p.created_at || ''}</div>
+        <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();quickDownload(${p.id})" title="Télécharger ZIP" style="padding:4px 8px;font-size:.7rem;">📦</button>
+        <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();quickDelete(${p.id})" title="Supprimer" style="padding:4px 8px;font-size:.7rem;">🗑️</button>
       </div>
     </div>
   `).join('');
@@ -675,26 +677,46 @@ async function showProjectDetail(id) {
   activeProjectFolder = p.folder;
 
   document.getElementById('detailTitle').textContent = p.title;
+  const buildBadge = p.build_validated == 1 ? '<span class="pill pill-green">✅ Build OK</span>' : '<span class="pill pill-red">❌ Build</span>';
   document.getElementById('detailInfo').innerHTML = `
     <div class="project-info-item"><div class="label">Type</div><div class="value">${p.project_type}</div></div>
     <div class="project-info-item"><div class="label">Stack</div><div class="value"><span class="stack-tag">${p.frontend}</span> <span class="stack-tag">${p.backend}</span></div></div>
     <div class="project-info-item"><div class="label">BDD</div><div class="value">${p.database}</div></div>
     <div class="project-info-item"><div class="label">Score QA</div><div class="value">${p.qa_score || '—'}/100</div></div>
+    <div class="project-info-item"><div class="label">Build</div><div class="value">${buildBadge}</div></div>
     <div class="project-info-item"><div class="label">Fichiers</div><div class="value">${p.file_count || 0}</div></div>
-    <div class="project-info-item"><div class="label">Status</div><div class="value"><span class="pill ${p.status === 'done' ? 'pill-green' : 'pill-red'}">${p.status}</span></div></div>
+    <div class="project-info-item"><div class="label">Status</div><div class="value"><span class="pill ${p.status === 'done' ? 'pill-green' : p.status === 'failed' ? 'pill-red' : 'pill-blue'}">${p.status}</span></div></div>
   `;
 
   const logs = d.logs || [];
-  document.getElementById('detailLogs').innerHTML = logs.length
-    ? logs.map(l => `<span style="color:var(--text-3)">[${l.logged_at}]</span> <span class="tag-${l.level}">${l.level}</span> ${l.message}<br>`).join('')
-    : '<span style="color:var(--text-3)">Aucun log</span>';
+  const errorLogs = logs.filter(l => l.level === 'err' || l.level === 'warn');
+  document.getElementById('detailLogs').innerHTML = (logs.length
+    ? (errorLogs.length ? `<div style="margin-bottom:8px;padding:8px;background:rgba(239,68,68,0.08);border-radius:var(--radius-sm);border:1px solid rgba(239,68,68,0.2);">
+        <span style="color:var(--error);font-weight:700;">⚠ ${errorLogs.length} erreur(s)</span></div>` : '')
+    + logs.map(l => `<span style="color:var(--text-3)">[${l.logged_at}]</span> <span class="tag-${l.level}">${l.level}</span> ${l.message}<br>`).join('')
+    : '<span style="color:var(--text-3)">Aucun log</span>');
 
   document.getElementById('projectDetail').style.display = 'block';
   document.getElementById('projectDetail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Update preview
+  updatePreview(p);
+}
+function updatePreview(p) {
+  const folder = p?.folder || activeProjectFolder;
+  if (!folder) return;
+  const iframe = document.getElementById('previewFrame');
+  const candidates = ['/index.html', '/index.htm', '/index.php', '/dist/index.html'];
+  for (const c of candidates) {
+    iframe.src = folder + c;
+    return; // iframe will show 404 if not found — that's fine
+  }
 }
 function closeProjectDetail() { document.getElementById('projectDetail').style.display = 'none'; }
 function openProjectFolder() {
-  if (activeProjectFolder) window.open(activeProjectFolder + '/index.php', '_blank');
+  if (activeProjectFolder) {
+    window.open(activeProjectFolder + '/index.html', '_blank');
+  }
 }
 function downloadProjectZip() {
   if (!activeProjectId) return;
@@ -704,6 +726,14 @@ async function deleteProject() {
   if (!activeProjectId || !confirm('Supprimer ce projet définitivement ?')) return;
   const r = await api('delete_project', { id: activeProjectId });
   if (r.success) { closeProjectDetail(); loadProjects(); loadStats(); }
+}
+async function quickDelete(id) {
+  if (!confirm('Supprimer ce projet définitivement ?')) return;
+  const r = await api('delete_project', { id });
+  if (r.success) { loadProjects(); loadStats(); }
+}
+function quickDownload(id) {
+  window.location.href = 'api.php?action=download_zip&id=' + id;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -809,75 +839,55 @@ async function launchBuild() {
     activeProjectFolder = proj.folder;
     terminalLog('ok', `Projet #${proj.id} créé → ${proj.folder}`);
 
-    // Launch build via EventSource
-    terminalLog('sys', '🚀 Lancement du pipeline 7 agents...');
+    // Launch build in background — poll for logs
+    terminalLog('sys', '🚀 Lancement du pipeline 7 agents en arrière-plan...');
     setProgress(2, 'Démarrage du pipeline...');
 
-    const resp = await fetch('api.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'run_build', project_id: proj.id })
-    });
+    const launchResp = await apiJSON('run_build', { project_id: proj.id });
+    if (launchResp.error) { terminalLog('err', 'Erreur: ' + launchResp.error); isBuilding = false; document.getElementById('launchBtn').disabled = false; return; }
+    terminalLog('ok', 'Build #' + proj.id + ' lancé en arrière-plan');
 
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
+    let lastLogId = 0;
+    let buildCompleted = false;
     const stepMap = { 'cto': 'step-cto', 'architect': 'step-architect', 'designer': 'step-designer', 'backend': 'step-backend', 'frontend': 'step-frontend', 'qa': 'step-qa', 'devops': 'step-devops', 'engine': 'step-cto' };
 
-    let buildCompleted = false;
+    for (let i = 0; i < 180; i++) { // poll up to 6 minutes
+      await new Promise(r => setTimeout(r, 2000));
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+      try {
+        const status = await api('get_project', { id: '' + proj.id });
+        const p = status.project;
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        let msg;
-        try { msg = JSON.parse(line); } catch { continue; }
-
-        switch (msg.type) {
-          case 'log':
-            terminalLog(msg.level || 'info', msg.message || '');
-            if (stepMap[msg.step]) setStep(msg.step, msg.level === 'ok' ? 'done' : msg.level === 'err' ? 'failed' : 'active');
-            break;
-          case 'progress':
-            setProgress(msg.pct, msg.label);
-            break;
-          case 'done':
-            buildCompleted = true;
-            terminalLog('ok', msg.result?.success ? '✅ Projet terminé !' : '❌ Échec');
-            loadProjects();
-            loadStats();
-            if (msg.result?.success) showProjectDetail(proj.id);
-            isBuilding = false;
-            document.getElementById('launchBtn').disabled = false;
-            return;
+        // Fetch new logs
+        const logData = await api('get_logs', { project_id: '' + proj.id });
+        const logs = logData.logs || [];
+        for (const log of logs.slice(lastLogId)) {
+          terminalLog(log.level || 'info', log.message || '');
+          if (stepMap[log.step]) setStep(log.step, log.level === 'ok' ? 'done' : log.level === 'err' ? 'failed' : 'active');
+          // Extract progress from log messages like "pct:50 label:..."
+          const pctMatch = log.message?.match(/pct:(\d+)/);
+          if (pctMatch) setProgress(parseInt(pctMatch[1]), log.label || log.message || '');
         }
+        lastLogId = logs.length;
+
+        if (p?.status === 'done' || p?.status === 'failed') {
+          buildCompleted = true;
+          terminalLog(p.status === 'done' ? 'ok' : 'err', p.status === 'done' ? '✅ Projet terminé !' : '❌ Échec');
+          setProgress(100, p.status === 'done' ? '✅ Terminé' : '❌ Échoué');
+          loadProjects(); loadStats();
+          if (p.status === 'done') showProjectDetail(proj.id);
+          break;
+        }
+
+        if (p?.status === 'building') {
+          setProgress(Math.min(95, 3 + Math.floor(i/2)), 'Construction en cours...');
+        }
+      } catch (e) {
+        terminalLog('warn', 'Poll: ' + e.message);
       }
     }
 
-    // Stream ended without 'done' event — poll for status
-    if (!buildCompleted) {
-      terminalLog('warn', 'Flux interrompu, vérification du statut...');
-      for (let i = 0; i < 30; i++) {
-        await new Promise(r => setTimeout(r, 2000));
-        try {
-          const status = await api('get_project', { id: '' + proj.id });
-          if (status.project?.status === 'done' || status.project?.status === 'failed') {
-            terminalLog(status.project.status === 'done' ? 'ok' : 'err',
-              status.project.status === 'done' ? '✅ Projet terminé !' : '❌ Échec');
-            loadProjects(); loadStats();
-            if (status.project.status === 'done') showProjectDetail(proj.id);
-            break;
-          }
-        } catch {}
-      }
-    }
+    if (!buildCompleted) terminalLog('warn', '⚠ Le build prend plus de 6 min — vérifie le statut manuellement');
   } catch (e) {
     terminalLog('err', 'Erreur: ' + e.message);
     setStep('cto', 'failed');

@@ -167,28 +167,20 @@ if ($action === 'run_build') {
     // Clear old logs
     $db->prepare("DELETE FROM build_logs WHERE project_id = ?")->execute([$id]);
     $db->prepare("DELETE FROM generated_files WHERE project_id = ?")->execute([$id]);
+    updateProject($db, $id, ['status' => 'building']);
 
-    // Configure SSE streaming
-    header('Content-Type: text/event-stream');
-    header('X-Accel-Buffering: no');
-    ob_implicit_flush(true);
-    ob_end_flush();
+    // Spawn background build process
+    $scriptPath = __DIR__ . DIRECTORY_SEPARATOR . 'background_build.php';
+    $phpBin = PHP_BINARY;
+    $cmd = "\"$phpBin\" \"$scriptPath\" $id";
+    if (PHP_OS_FAMILY === 'Windows') {
+        $cmd = "start /B \"AC4Build$id\" $cmd";
+        pclose(popen($cmd, 'r'));
+    } else {
+        exec("nohup $cmd > /dev/null 2>&1 &");
+    }
 
-    $brief = @json_decode($project['brief'], true) ?: ['who'=>'', 'target'=>'', 'monetize'=>''];
-    $brief['title'] = $project['title'];
-    $brief['project_id'] = $id;
-    $brief['folder'] = $project['folder'];
-    $brief['project_type'] = $project['project_type'] ?? '';
-    $brief['frontend'] = $project['frontend'] ?? '';
-    $brief['backend'] = $project['backend'] ?? '';
-    $brief['database'] = $project['database'] ?? '';
-    $brief['css_framework'] = $project['css_framework'] ?? '';
-
-    $engine = new PipelineEngine();
-    $result = $engine->run($brief);
-
-    echo json_encode(['type' => 'done', 'result' => $result]) . "\n";
-    exit;
+    ok(['message' => 'Build démarré en arrière-plan', 'project_id' => $id]);
 }
 
 // ─── FILES (ZIP download) ─────────────────────────────────────────────
