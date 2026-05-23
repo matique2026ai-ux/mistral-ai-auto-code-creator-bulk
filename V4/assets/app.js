@@ -234,6 +234,7 @@ async function showProjectDetail(id) {
     <div class="project-info-item"><div class="label">Build</div><div class="value">${buildBadge}</div></div>
     <div class="project-info-item"><div class="label">Fichiers</div><div class="value">${p.file_count || 0}</div></div>
     <div class="project-info-item"><div class="label">Status</div><div class="value"><span class="pill ${p.status === 'done' ? 'pill-green' : p.status === 'failed' ? 'pill-red' : 'pill-blue'}">${p.status}</span></div></div>
+    ${formatDuration(p.created_at, p.updated_at) ? `<div class="project-info-item"><div class="label">Durée</div><div class="value">${formatDuration(p.created_at, p.updated_at)}</div></div>` : ''}
   `;
   const logs = d.logs || [];
   const errorLogs = logs.filter(l => l.level === 'err' || l.level === 'warn');
@@ -493,9 +494,42 @@ function changePreviewPage() {
 }
 
 // ══════════════════════════════════════════════
+// THEME TOGGLE
+// ══════════════════════════════════════════════
+function toggleTheme() {
+  const html = document.documentElement;
+  const isLight = html.getAttribute('data-theme') === 'light';
+  html.setAttribute('data-theme', isLight ? '' : 'light');
+  localStorage.setItem('ac4_theme', isLight ? '' : 'light');
+  document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
+}
+function restoreTheme() {
+  const saved = localStorage.getItem('ac4_theme');
+  if (saved === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+    document.getElementById('themeToggle').textContent = '☀️';
+  }
+}
+
+// ══════════════════════════════════════════════
+// BUILD TIMER
+// ══════════════════════════════════════════════
+function formatDuration(created, updated) {
+  if (!created || !updated) return '';
+  const start = new Date(created.replace(' ', 'T') + 'Z');
+  const end = new Date(updated.replace(' ', 'T') + 'Z');
+  const diff = Math.floor((end - start) / 1000);
+  if (diff < 0 || isNaN(diff)) return '';
+  if (diff < 60) return diff + 's';
+  if (diff < 3600) return Math.floor(diff / 60) + 'm ' + (diff % 60) + 's';
+  return Math.floor(diff / 3600) + 'h ' + Math.floor((diff % 3600) / 60) + 'm';
+}
+
+// ══════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', function() {
+  restoreTheme();
   loadKeys();
   loadProjects();
   loadStats();

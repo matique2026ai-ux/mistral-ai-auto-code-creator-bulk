@@ -25,6 +25,28 @@
   --font: 'Inter', -apple-system, sans-serif;
   --mono: 'JetBrains Mono', monospace;
 }
+[data-theme="light"] {
+  --bg: #f5f7fa;
+  --surface: #ffffff;
+  --card: #ffffff;
+  --card-hover: #f0f2f5;
+  --border: #d1d5db;
+  --border-light: #e5e7eb;
+  --primary: #4f46e5;
+  --primary-dim: rgba(79,70,229,0.08);
+  --primary-glow: rgba(79,70,229,0.15);
+  --accent: #0d9488;
+  --accent-dim: rgba(13,148,136,0.08);
+  --text: #111827;
+  --text-2: #4b5563;
+  --text-3: #9ca3af;
+  --success: #16a34a;
+  --error: #dc2626;
+  --warning: #d97706;
+  --info: #2563eb;
+  --orange: #d97706;
+  --pink: #db2777;
+}
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
   font-family: var(--font);

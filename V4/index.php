@@ -182,7 +182,8 @@ $css_frameworks = json_decode(AC4_CSS, true);
         <h2>🤖 7-Agent Pipeline</h2>
         <p id="modelStatus">Modèle : <?= AC4_MODEL ?> — Multi-provider</p>
       </div>
-      <div style="display:flex;gap:8px;">
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-sm btn-outline" id="themeToggle" onclick="toggleTheme()" title="Changer le thème" style="font-size:1rem;line-height:1;padding:4px 10px;">🌙</button>
         <span class="badge badge-primary" id="totalKeys">0 clés</span>
         <span class="badge badge-accent" id="totalTokens">0 tokens</span>
       </div>
