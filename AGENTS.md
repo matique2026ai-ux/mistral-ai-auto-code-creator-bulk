@@ -44,23 +44,23 @@
 4. ~~Windows waitForChild~~ → Supprimé (les jobs DB gèrent déjà l'état)
 5. ~~localExportCache dead code~~ → Condition inutile supprimée
 
-### MEDIUM
-6. **`$db` hors scope dans `runWorkerLoop()`** — `worker.php:79,85` — `$db ?? getDB()` toujours `getDB()`. **Fix** : supprimer `$db ??`.
-7. **`ob_flush()` sans guard SSE** — `api.php:291`. **Fix** : ajouter `if (ob_get_level())`.
-8. **`enqueueProject()` redondant** — `api.php:224` puis `background_build.php:29` supprime et ré-enqueue. **Fix** : supprimer l'appel dans api.php.
-9. **`test_key` toujours Mistral** — `api.php:96-110` — Ignore le provider. **Fix** : utiliser l'URL du provider.
-10. **`validateStackItem` retourne `''`** — `api.php:57-65` — Écrase les defaults DB. **Fix** : retourner la valeur par défaut.
-11. **`loadAgentPrompt` pas de check** — `engine.php:80` — `file_get_contents` peut retourner false. **Fix** : logger l'erreur.
-12. **`$buildResult` non initialisé** — `engine.php:1153`. **Fix** : initialiser avant la boucle.
+### ✅ MEDIUM — Corrigés dans `6c3ba0d`
+6. ~~`$db` hors scope~~ → `getDB()` direct, `$db ??` supprimé
+7. ~~`ob_flush()` sans guard~~ → `if (ob_get_level())` ajouté
+8. ~~`enqueueProject()` redondant~~ => Supprimé de api.php (background_build.php gère tout)
+9. ~~`test_key` toujours Mistral~~ → Utilise l'URL et le format du provider sélectionné
+10. ~~`validateStackItem` retourne `''`~~ → Fallback `?: 'react'|'node_express'|etc.` dans create_project
+11. ~~`loadAgentPrompt` pas de check~~ → `is_file`/`is_readable` + log d'erreur
+12. ~~`$buildResult` non initialisé~~ → Initialisé avant la boucle
 
-### LOW
-13. **Regex sandbox inefficace** — `sandbox.php:91-98` — Tous les métacaractères shell autorisés.
-14. **Nom container Docker** — `sandbox.php:49` — Collision possible. **Fix** : ajouter `bin2hex(random_bytes(4))`.
-15. **`curl_init()` non vérifié** — `models.php:111`, `api.php:98`.
-16. **Path traversal ZIP** — `api.php:300-330`.
-17. **Redondance background_build** — `background_build.php:44-53`.
-18. **`start /B` titre Windows** — `api.php:231`, `worker.php:100`.
-19. **ZipArchive non fermé sur erreur** — `api.php:310-322`.
+### ✅ LOW — Corrigés dans `6c3ba0d`
+13. ~~Regex sandbox inefficace~~ → Regex trompeuse supprimée
+14. ~~Nom container Docker~~ → `bin2hex(random_bytes(4))` ajouté
+15. ~~`curl_init()` non vérifié~~ → `throw` si false
+16. ~~Path traversal ZIP~~ → `realpath()` + `strpos()` vérifié avant addFile
+17. ~~Redondance background_build~~ → Simplifié, suppression des updateProject redondants
+18. ~~`start /B` titre Windows~~ → Titre vide explicite `""`
+19. ~~ZipArchive non fermé~~ → `try/finally` autour de l'ajout des fichiers
 
 ---
 

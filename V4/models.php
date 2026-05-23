@@ -109,6 +109,7 @@ class AIModel {
         };
 
         $ch = curl_init($url);
+        if ($ch === false) throw new \Exception("cURL init failed for $provider");
         $curlHeaders = [];
         foreach ($headers as $k => $v) {
             $curlHeaders[] = str_replace('{key}', $keyVal, $k) . ': ' . str_replace('{key}', $keyVal, $v);

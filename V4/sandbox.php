@@ -46,7 +46,7 @@ class BuildSandbox {
     }
 
     private function executeDocker(array $command): array {
-        $this->containerName = 'ac4_build_' . uniqid();
+        $this->containerName = 'ac4_build_' . uniqid() . '_' . bin2hex(random_bytes(4));
 
         $stack = $command['stack'] ?? 'node';
         $image = $this->getDockerImage($stack);
@@ -86,16 +86,6 @@ class BuildSandbox {
         $code = -1;
         $cmd = $command['cmd'];
         $cwd = $command['cwd'] ?? $this->buildDir;
-
-        // Securisation: validate command characters
-        $allowed = '/^[a-zA-Z0-9_\-\/\.\s:;@$\(\)\{\}\[\]\&\|\!\<\>\=\+\*\,\~\^\'\"\%\#\\\\]+$/';
-        if (!preg_match($allowed, $cmd)) {
-            return [
-                'output' => ['ERROR: Invalid characters in command'],
-                'code' => -1,
-                'container' => null,
-            ];
-        }
 
         // Validate working directory is within builds dir
         $realCwd = realpath($cwd);

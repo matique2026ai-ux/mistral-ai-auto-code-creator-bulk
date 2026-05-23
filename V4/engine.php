@@ -77,7 +77,16 @@ class PipelineEngine {
 
     private function loadAgentPrompt(string $name): string {
         $path = AC4_AGENTS_DIR . DIRECTORY_SEPARATOR . $name . '.md';
-        return file_exists($path) ? file_get_contents($path) : '';
+        if (!is_file($path) || !is_readable($path)) {
+            $this->log('warn', "Agent prompt introuvable: $path");
+            return '';
+        }
+        $content = file_get_contents($path);
+        if ($content === false) {
+            $this->log('err', "Echec lecture agent prompt: $path");
+            return '';
+        }
+        return $content;
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -1068,6 +1077,7 @@ class PipelineEngine {
         $finalScore = 0;
         $finalIssues = [];
         $finalFixes = [];
+        $buildResult = ['success' => false, 'errors' => []];
 
         for ($iteration = 0; $iteration < $maxIterations; $iteration++) {
             $this->log('sys', "═══ QA-Fix Itération " . ($iteration + 1) . "/{$maxIterations} ═══");

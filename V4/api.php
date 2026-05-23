@@ -55,6 +55,7 @@ function validateProjectType(string $type): string {
 }
 
 function validateStackItem(string $item, string $category): string {
+    if ($item === '') return '';
     $stacks = json_decode(AC4_STACKS, true);
     $allItems = [];
     foreach ($stacks as $s) {
@@ -109,13 +110,30 @@ if ($action === 'reset_key') {
 
 if ($action === 'test_key') {
     $key = trim(p('key')); if (!$key) err('Key required');
-    $ch = curl_init(AC4_API_URL);
+    $provider = p('provider', 'mistral');
+    $providers = json_decode(AC4_PROVIDERS, true);
+    $cfg = $providers[$provider] ?? $providers['mistral'];
+    $url = $cfg['base_url'];
+    $headers = [];
+    foreach ($cfg['headers'] ?? [] as $k => $v) {
+        $headers[] = str_replace('{key}', $key, $k) . ': ' . str_replace('{key}', $key, $v);
+    }
+    $payload = json_encode(['model' => $cfg['default_model'] ?? AC4_MODEL, 'messages' => [['role'=>'user','content'=>'OK']], 'max_tokens' => 5]);
+    if ($provider === 'google') {
+        $url = str_replace('{model}', $cfg['default_model'] ?? 'gemini-2.0-flash', $url) . '?key=' . $key;
+        $payload = json_encode(['contents' => [['parts' => [['text' => 'OK']]]]]);
+    }
+    if ($provider === 'anthropic') {
+        $payload = json_encode(['model' => $cfg['default_model'], 'messages' => [['role'=>'user','content'=>'OK']], 'max_tokens' => 5]);
+    }
+    $ch = curl_init($url);
+    if ($ch === false) err('cURL init failed');
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
         CURLOPT_TIMEOUT => 15,
-        CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $key, 'Content-Type: application/json'],
-        CURLOPT_POSTFIELDS => json_encode(['model' => AC4_MODEL, 'messages' => [['role'=>'user','content'=>'OK']], 'max_tokens' => 5])
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_POSTFIELDS => $payload,
     ]);
     $resp = curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -152,10 +170,10 @@ if ($action === 'create_project') {
     $target   = pSafe('target');
     $monetize = pSafe('monetize');
     $type     = validateProjectType(p('type', 'fullstack'));
-    $frontend = validateStackItem(p('frontend', ''), 'frontends');
-    $backend  = validateStackItem(p('backend', ''), 'backends');
-    $database = validateStackItem(p('database', ''), 'databases');
-    $css      = validateStackItem(p('css', ''), 'css');
+    $frontend = validateStackItem(p('frontend', ''), 'frontends') ?: 'react';
+    $backend  = validateStackItem(p('backend', ''), 'backends') ?: 'node_express';
+    $database = validateStackItem(p('database', ''), 'databases') ?: 'sqlite';
+    $css      = validateStackItem(p('css', ''), 'css') ?: 'tailwind';
     $lang     = in_array(p('lang', 'fr'), ['fr','en','ar','es','de','pt','zh','ja']) ? p('lang', 'fr') : 'fr';
 
     // Validate master prompt length
@@ -234,17 +252,12 @@ if ($action === 'run_build') {
     $db->prepare("DELETE FROM jobs WHERE project_id = ?")->execute([$id]);
     updateProject($db, $id, ['status' => 'building']);
 
-    // Enqueue all pipeline jobs via the queue system
-    require_once __DIR__ . '/queue.php';
-    $queue = new JobQueue();
-    $queue->enqueueProject($id);
-
-    // Spawn background worker process
+    // Spawn background worker process (background_build.php handles enqueue + worker)
     $scriptPath = __DIR__ . DIRECTORY_SEPARATOR . 'background_build.php';
     $phpBin = PHP_BINARY;
     $cmd = "\"$phpBin\" \"$scriptPath\" $id";
     if (PHP_OS_FAMILY === 'Windows') {
-        $cmd = "start /B \"AC4Build$id\" $cmd";
+        $cmd = "start /B \"\" $cmd";
         pclose(popen($cmd, 'r'));
     } else {
         exec("nohup $cmd > /dev/null 2>&1 &");
@@ -304,7 +317,8 @@ if ($action === 'sse_stream') {
             break;
         }
 
-        ob_flush(); flush();
+        if (ob_get_level()) ob_flush();
+        flush();
         sleep(1);
     }
 
@@ -320,22 +334,29 @@ if ($action === 'download_zip') {
 
     $folderName = basename($project['folder']);
     $targetDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . $folderName;
-    if (!is_dir($targetDir)) err('Project folder not found');
+    $realTargetDir = realpath($targetDir);
+    $realBuildsDir = realpath(AC4_BUILDS_DIR);
+    if (!$realTargetDir || !$realBuildsDir || strpos($realTargetDir, $realBuildsDir) !== 0) err('Invalid project folder');
 
     $zipFile = tempnam(sys_get_temp_dir(), 'ac4_zip_');
     $zip = new ZipArchive();
     if ($zip->open($zipFile, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) err('Failed to create ZIP');
 
-    $files = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($targetDir, FilesystemIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::LEAVES_ONLY
-    );
-    foreach ($files as $file) {
-        if (!$file->isDir()) {
-            $zip->addFile($file->getRealPath(), substr($file->getRealPath(), strlen($targetDir) + 1));
+    try {
+        $files = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($targetDir, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::LEAVES_ONLY
+        );
+        foreach ($files as $file) {
+            if (!$file->isDir()) {
+                $realPath = $file->getRealPath();
+                if (strpos($realPath, $realTargetDir) !== 0) continue;
+                $zip->addFile($realPath, substr($realPath, strlen($targetDir) + 1));
+            }
         }
+    } finally {
+        $zip->close();
     }
-    $zip->close();
 
     header('Content-Type: application/zip');
     header('Content-Disposition: attachment; filename="' . htmlspecialchars($project['title']) . '.zip"');

@@ -36,21 +36,9 @@ fwrite(STDERR, "Project #$projectId: " . count($jobs) . " jobs enqueued\n");
 
 // Run the worker (single run mode — processes all jobs then exits)
 require_once __DIR__ . '/worker.php';
-// worker.php already reads $projectId from argv, but we call it directly
-// via the loop function
 runWorkerLoop($projectId, $queue, 'bg_' . uniqid(), 2);
 
-// Final status
-$stmt = $db->prepare("SELECT * FROM projects WHERE id = ?"); $stmt->execute([$projectId]); $project = $stmt->fetch();
-$status = $project['status'] ?? 'unknown';
+// Final status check (worker already sets status, just report)
 $failed = $queue->getFailedJobs($projectId);
-
-if (!empty($failed)) {
-    updateProject($db, $projectId, ['status' => 'failed']);
-    fwrite(STDERR, "Build #$projectId FAILED\n");
-} elseif ($status === 'building') {
-    updateProject($db, $projectId, ['status' => 'done']);
-    fwrite(STDERR, "Build #$projectId completed\n");
-}
-
+fwrite(STDERR, empty($failed) ? "Build #$projectId completed\n" : "Build #$projectId FAILED\n");
 exit(empty($failed) ? 0 : 1);

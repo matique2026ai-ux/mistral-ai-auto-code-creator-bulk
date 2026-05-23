@@ -98,7 +98,7 @@ function launchWorkerChild(int $projectId, int $jobId, string $jobName): ?int {
     $cmd = "\"$phpBin\" \"$scriptPath\" $projectId $jobId $jobName";
 
     if (PHP_OS_FAMILY === 'Windows') {
-        $cmd = "start /B \"AC4Job$jobId\" $cmd";
+        $cmd = "start /B \"\" $cmd";
         $proc = pclose(popen($cmd, 'r'));
         // On Windows, return a synthetic PID (unix timestamp)
         return (int)(microtime(true) * 1000000);
