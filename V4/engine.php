@@ -371,12 +371,21 @@ class PipelineEngine {
         return $this->callWithRetry($messages, 6000, true, 'backend');
     }
 
-    // ─── Agent Frontend ───────────────────────────────────────────
+    // ─── Agent Frontend (génération fichier par fichier) ──────────
 
     private function runFrontend(array $brief, array $stack, array $arch, array $design, array $backend): array {
         $prompt = $this->loadAgentPrompt('frontend');
-        $messages = [
-            ['role' => 'system', 'content' => $prompt],
+        $allFiles = [];
+
+        // Step 1: Generate file manifest (just filenames)
+        $this->log('ai', 'Frontend: Planification des fichiers...');
+        $manifestPrompt = str_replace(
+            'Génère TOUS les fichiers du frontend au complet en une seule réponse JSON.',
+            'Génère UNIQUEMENT la liste des fichiers à créer (noms et brève description).',
+            $prompt
+        );
+        $manifestMessages = [
+            ['role' => 'system', 'content' => $manifestPrompt . "\n\nRéponse attendue : {\"files\":[{\"filename\":\"...\",\"description\":\"...\",\"language\":\"...\"}]}"],
             ['role' => 'user', 'content' => json_encode([
                 'brief' => $brief,
                 'stack' => $stack,
@@ -385,9 +394,50 @@ class PipelineEngine {
                 'backend' => $backend,
                 'pages' => $arch['frontend_pages'] ?? [],
                 'components_tree' => $arch['components_tree'] ?? [],
+                'mode' => 'manifest_only',
             ])],
         ];
-        return $this->callWithRetry($messages, 6000, true, 'frontend');
+        $manifest = $this->callWithRetry($manifestMessages, 3000, true, 'frontend-manifest');
+        $fileList = $manifest['files'] ?? [];
+        if (empty($fileList)) {
+            throw new Exception('Frontend: aucun fichier planifié');
+        }
+        $this->log('ok', 'Frontend: ' . count($fileList) . ' fichiers planifiés');
+
+        // Step 2: Generate each file individually
+        $total = count($fileList);
+        foreach ($fileList as $i => $fileDef) {
+            $this->progress(58 + intval(20 * $i / $total), "Frontend: fichier " . ($i + 1) . "/{$total}...");
+            $filename = $fileDef['filename'] ?? "page_{$i}.tsx";
+            $this->log('ai', "Frontend: Génération de {$filename}...");
+
+            $fileMessages = [
+                ['role' => 'system', 'content' => "Tu génères UN SEUL fichier frontend. Réponse JSON : {\"filename\":\"...\",\"content\":\"...\",\"language\":\"...\"}"],
+                ['role' => 'user', 'content' => json_encode([
+                    'brief' => $brief,
+                    'stack' => $stack,
+                    'architecture' => $arch,
+                    'design_system' => $design,
+                    'backend' => $backend,
+                    'file_to_generate' => $filename,
+                    'file_description' => $fileDef['description'] ?? '',
+                    'all_planned_files' => array_column($fileList, 'filename'),
+                ])],
+            ];
+            $fileResult = $this->callWithRetry($fileMessages, 4000, true, "frontend-file");
+
+            $genFilename = $fileResult['filename'] ?? $filename;
+            $genContent = $fileResult['content'] ?? '';
+            if ($genContent) {
+                $allFiles[] = ['filename' => $genFilename, 'content' => $genContent, 'language' => $fileDef['language'] ?? 'tsx'];
+            }
+            usleep(300000); // 300ms pause between files
+        }
+
+        if (empty($allFiles)) {
+            throw new Exception('Frontend: aucun fichier généré');
+        }
+        return ['files' => $allFiles];
     }
 
     // ─── Agent QA ─────────────────────────────────────────────────
