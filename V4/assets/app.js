@@ -32,7 +32,7 @@ function switchTab(name) {
   document.querySelector(`.tab-btn[onclick*="${name}"]`)?.classList.add('active');
   document.getElementById('panel' + name.charAt(0).toUpperCase() + name.slice(1)).classList.add('active');
   if (name === 'keys') loadKeys();
-  if (name === 'projects') { loadProjects(); loadStats(); }
+  if (name === 'projects') { loadProjects(document.getElementById('projectSearch').value); loadStats(); }
   if (name === 'dashboard') { loadDashboard(); }
 }
 
@@ -99,8 +99,10 @@ async function resetKey(id) { const r = await api('reset_key', { id }); if (r.su
 // ══════════════════════════════════════════════
 // PROJECTS
 // ══════════════════════════════════════════════
-async function loadProjects() {
-  const data = await api('list_projects');
+async function loadProjects(q) {
+  const params = { limit: 100 };
+  if (q) params.q = q;
+  const data = await api('list_projects', params);
   const projects = data.projects || [];
   const el = document.getElementById('projectsList');
   if (!projects.length) { el.innerHTML = '<div class="empty-state">Aucun projet. Lancez un build !</div>'; return; }
@@ -244,6 +246,14 @@ function closeProjectDetail() { document.getElementById('projectDetail').style.d
 function openProjectFolder() { if (activeProjectFolder) window.open(activeProjectFolder + '/index.html', '_blank'); }
 function downloadProjectZip() { if (activeProjectId) window.location.href = 'api.php?action=download_zip&id=' + activeProjectId; }
 async function deleteProject() { if (!activeProjectId || !confirm('Supprimer ce projet définitivement ?')) return; const r = await api('delete_project', { id: activeProjectId }); if (r.success) { closeProjectDetail(); loadProjects(); loadStats(); } }
+async function exportProject() { if (!activeProjectId) return; window.location.href = 'api.php?action=export_project&id=' + activeProjectId; }
+async function importProject(file) {
+  if (!file) return;
+  const fd = new FormData(); fd.append('file', file);
+  const r = await fetch('api.php?action=import_project', { method: 'POST', body: fd }).then(res => res.json());
+  if (r.success) { terminalLog('ok', '📥 Projet importé : ' + r.title); loadProjects(); loadStats(); showProjectDetail(r.id); }
+  else { terminalLog('err', '❌ Import échoué : ' + (r.error || 'unknown')); }
+}
 async function rebuildProject() { if (!activeProjectId || !confirm('Relancer le build depuis zéro ?')) return; const r = await api('rebuild_build', { project_id: activeProjectId }); if (r.success) { terminalLog('sys', '🔄 Re-build lancé #' + activeProjectId); startSSE(activeProjectId); } }
 async function resumeProject() { if (!activeProjectId || !confirm('Reprendre le build interrompu ?')) return; const r = await api('resume_build', { project_id: activeProjectId }); if (r.success) { terminalLog('sys', '▶ Resume lancé #' + activeProjectId); startSSE(activeProjectId); } }
 async function quickDelete(id) { if (!confirm('Supprimer ce projet définitivement ?')) return; const r = await api('delete_project', { id }); if (r.success) { loadProjects(); loadStats(); } }
@@ -381,6 +391,26 @@ async function launchBuild() {
       if (isOk) showProjectDetail(proj.id);
       isBuilding = false;
       document.getElementById('launchBtn').disabled = false;
+
+      // Notification
+      if (Notification.permission === 'granted') {
+        new Notification(isOk ? '✅ Build terminé' : '❌ Build échoué', {
+          body: isOk ? `"${proj.title}" — Build réussi !` : `"${proj.title}" — Le build a échoué`,
+          icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🤖</text></svg>'
+        });
+      }
+      // Son
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = isOk ? 'sine' : 'sawtooth';
+        osc.frequency.value = isOk ? 880 : 330;
+        gain.gain.setValueAtTime(isOk ? 0.15 : 0.2, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + (isOk ? 0.4 : 0.5));
+        osc.start(); osc.stop(ctx.currentTime + (isOk ? 0.4 : 0.5));
+      } catch (_) {}
     }
 
     evtSource.addEventListener('done', function(e) {
@@ -443,4 +473,5 @@ document.addEventListener('DOMContentLoaded', function() {
   loadKeys();
   loadProjects();
   loadStats();
+  if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
 });

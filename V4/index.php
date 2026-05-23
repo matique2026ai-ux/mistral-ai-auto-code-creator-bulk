@@ -157,7 +157,14 @@ $css_frameworks = json_decode(AC4_CSS, true);
           </div>
         </div>
         <div class="card">
-          <div class="card-title">📁 Projets</div>
+          <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+            <span>📁 Projets</span>
+            <button class="btn btn-sm btn-outline" onclick="document.getElementById('importFileInput').click()">📥 Importer</button>
+            <input type="file" id="importFileInput" accept=".zip" style="display:none" onchange="importProject(this.files[0])">
+          </div>
+          <div style="margin-bottom:10px;">
+            <input type="text" id="projectSearch" placeholder="🔍 Rechercher par titre, stack, status..." oninput="loadProjects(this.value)" style="width:100%;padding:8px 10px;font-size:.8rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);">
+          </div>
           <div class="item-list" id="projectsList"><div class="empty-state">Chargement...</div></div>
         </div>
       </div>
@@ -200,6 +207,7 @@ $css_frameworks = json_decode(AC4_CSS, true);
       <div style="display:flex;gap:8px;margin-bottom:12px;">
         <button class="btn btn-sm btn-outline" id="detailOpenBtn" onclick="openProjectFolder()">📂 Ouvrir</button>
         <button class="btn btn-sm btn-outline" onclick="downloadProjectZip()">📦 ZIP</button>
+        <button class="btn btn-sm btn-outline" onclick="exportProject()">📤 Export</button>
         <button class="btn btn-sm btn-primary" id="detailRebuildBtn" onclick="rebuildProject()" style="display:none;">🔄 Re-build</button>
         <button class="btn btn-sm btn-primary" id="detailResumeBtn" onclick="resumeProject()" style="display:none;">▶ Resume</button>
         <button class="btn btn-sm btn-danger" onclick="deleteProject()">🗑️</button>

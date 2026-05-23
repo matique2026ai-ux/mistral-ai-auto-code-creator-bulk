@@ -211,9 +211,16 @@ if ($action === 'update_project') {
 }
 
 if ($action === 'list_projects') {
-    $limit = min((int)(p('limit') ?: 30), 100);
-    $projects = $db->prepare("SELECT id, title, folder, project_type, frontend, backend, database, css_framework, status, qa_score, file_count, build_validated, created_at FROM projects ORDER BY id DESC LIMIT ?");
-    $projects->execute([$limit]);
+    $limit = min((int)(p('limit') ?: 100), 200);
+    $q = trim(p('q', ''));
+    if ($q !== '') {
+        $like = '%' . $q . '%';
+        $projects = $db->prepare("SELECT id, title, folder, project_type, frontend, backend, database, css_framework, status, qa_score, file_count, build_validated, created_at FROM projects WHERE title LIKE ? OR frontend LIKE ? OR backend LIKE ? OR status LIKE ? ORDER BY id DESC LIMIT ?");
+        $projects->execute([$like, $like, $like, $like, $limit]);
+    } else {
+        $projects = $db->prepare("SELECT id, title, folder, project_type, frontend, backend, database, css_framework, status, qa_score, file_count, build_validated, created_at FROM projects ORDER BY id DESC LIMIT ?");
+        $projects->execute([$limit]);
+    }
     respond(['projects' => $projects->fetchAll()]);
 }
 
@@ -413,6 +420,176 @@ if ($action === 'download_zip') {
     readfile($zipFile);
     unlink($zipFile);
     exit;
+}
+
+// ─── EXPORT / IMPORT ──────────────────────────────────────────────────
+
+if ($action === 'export_project') {
+    $id = (int)p('id'); if (!$id) err('Project ID required');
+    $stmt = $db->prepare("SELECT * FROM projects WHERE id = ?"); $stmt->execute([$id]); $project = $stmt->fetch();
+    if (!$project) err('Project not found');
+
+    $files = $db->prepare("SELECT filepath, language, size, status, created_at FROM generated_files WHERE project_id = ? ORDER BY id ASC"); $files->execute([$id]);
+    $logs  = $db->prepare("SELECT step, level, message, job_name, logged_at FROM build_logs WHERE project_id = ? ORDER BY id ASC"); $logs->execute([$id]);
+
+    $buildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($project['folder']);
+    $tmpDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'ac4_export_' . $id . '_' . uniqid();
+    if (!is_dir($tmpDir)) mkdir($tmpDir, 0755, true);
+
+    $manifest = [
+        'version' => AC4_VERSION,
+        'exported_at' => date('Y-m-d H:i:s'),
+        'project' => [
+            'title' => $project['title'],
+            'project_type' => $project['project_type'],
+            'frontend' => $project['frontend'],
+            'backend' => $project['backend'],
+            'database' => $project['database'],
+            'css_framework' => $project['css_framework'],
+            'output_lang' => $project['output_lang'],
+            'brief' => $project['brief'],
+            'arch_json' => $project['arch_json'],
+            'design_json' => $project['design_json'],
+            'stack_choice' => $project['stack_choice'],
+            'qa_score' => $project['qa_score'],
+            'build_validated' => $project['build_validated'],
+            'created_at' => $project['created_at'],
+        ],
+        'files' => $files->fetchAll(),
+        'logs' => $logs->fetchAll(),
+    ];
+
+    file_put_contents($tmpDir . DIRECTORY_SEPARATOR . 'manifest.json', json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
+    // Copy build files
+    if (is_dir($buildDir)) {
+        $buildsOut = $tmpDir . DIRECTORY_SEPARATOR . 'build';
+        if (!is_dir($buildsOut)) mkdir($buildsOut, 0755, true);
+        $iter = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($buildDir, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::LEAVES_ONLY
+        );
+        foreach ($iter as $file) {
+            $relPath = substr($file->getPathname(), strlen($buildDir) + 1);
+            $dest = $buildsOut . DIRECTORY_SEPARATOR . $relPath;
+            $parent = dirname($dest);
+            if (!is_dir($parent)) mkdir($parent, 0755, true);
+            copy($file->getPathname(), $dest);
+        }
+    }
+
+    $zipFile = tempnam(sys_get_temp_dir(), 'ac4_export_');
+    $zip = new ZipArchive();
+    if ($zip->open($zipFile, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) err('Failed to create ZIP');
+
+    try {
+        $iter = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($tmpDir, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::LEAVES_ONLY
+        );
+        foreach ($iter as $file) {
+            $relPath = substr($file->getPathname(), strlen($tmpDir) + 1);
+            $zip->addFile($file->getPathname(), $relPath);
+        }
+    } finally {
+        $zip->close();
+    }
+
+    // Clean temp dir
+    _rmdir_recursive($tmpDir);
+
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="' . htmlspecialchars($project['title']) . '_export.zip"');
+    header('Content-Length: ' . filesize($zipFile));
+    readfile($zipFile);
+    unlink($zipFile);
+    exit;
+}
+
+if ($action === 'import_project') {
+    if (empty($_FILES['file'])) err('No file uploaded');
+    $file = $_FILES['file'];
+    if ($file['error'] !== UPLOAD_ERR_OK) err('Upload error: ' . $file['error']);
+
+    $tmpDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'ac4_import_' . uniqid();
+    if (!is_dir($tmpDir)) mkdir($tmpDir, 0755, true);
+
+    $zip = new ZipArchive();
+    if ($zip->open($file['tmp_name']) !== true) { _rmdir_recursive($tmpDir); err('Invalid ZIP file'); }
+    $zip->extractTo($tmpDir);
+    $zip->close();
+
+    $manifestPath = $tmpDir . DIRECTORY_SEPARATOR . 'manifest.json';
+    if (!file_exists($manifestPath)) { _rmdir_recursive($tmpDir); err('manifest.json not found in ZIP'); }
+
+    $manifest = json_decode(file_get_contents($manifestPath), true);
+    if (!$manifest || empty($manifest['project'])) { _rmdir_recursive($tmpDir); err('Invalid manifest.json'); }
+
+    $p = $manifest['project'];
+
+    $slug = slugify($p['title']) . '-' . substr(uniqid(), -4);
+    $folder = AC4_BUILDS_WEB . '/' . $slug;
+    $newId = createProject($db, [
+        'title' => $p['title'], 'folder' => $folder,
+        'type' => $p['project_type'] ?? 'fullstack',
+        'frontend' => $p['frontend'] ?? 'react',
+        'backend' => $p['backend'] ?? 'node_express',
+        'database' => $p['database'] ?? 'sqlite',
+        'css' => $p['css_framework'] ?? 'tailwind',
+        'lang' => $p['output_lang'] ?? 'fr',
+        'brief' => $p['brief'] ?? '{}',
+    ]);
+
+    // Restore additional fields
+    $extraFields = [];
+    if (!empty($p['arch_json'])) $extraFields['arch_json'] = $p['arch_json'];
+    if (!empty($p['design_json'])) $extraFields['design_json'] = $p['design_json'];
+    if (!empty($p['stack_choice'])) $extraFields['stack_choice'] = $p['stack_choice'];
+    if (isset($p['qa_score'])) $extraFields['qa_score'] = (int)$p['qa_score'];
+    if (isset($p['build_validated'])) $extraFields['build_validated'] = (int)$p['build_validated'];
+    if (!empty($p['created_at'])) $extraFields['created_at'] = $p['created_at'];
+    if ($extraFields) updateProject($db, $newId, $extraFields);
+
+    // Restore build files
+    $importBuildDir = $tmpDir . DIRECTORY_SEPARATOR . 'build';
+    $targetBuildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . $slug;
+    if (!is_dir($targetBuildDir)) mkdir($targetBuildDir, 0755, true);
+    if (is_dir($importBuildDir)) {
+        $iter = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($importBuildDir, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::LEAVES_ONLY
+        );
+        foreach ($iter as $f) {
+            $relPath = substr($f->getPathname(), strlen($importBuildDir) + 1);
+            $dest = $targetBuildDir . DIRECTORY_SEPARATOR . $relPath;
+            $parent = dirname($dest);
+            if (!is_dir($parent)) mkdir($parent, 0755, true);
+            copy($f->getPathname(), $dest);
+        }
+    }
+
+    // Restore generated_files
+    if (!empty($manifest['files'])) {
+        $ins = $db->prepare("INSERT INTO generated_files (project_id, filepath, language, size, status, created_at) VALUES (?,?,?,?,?,?)");
+        foreach ($manifest['files'] as $gf) {
+            $ins->execute([$newId, $gf['filepath'], $gf['language'] ?? null, (int)($gf['size'] ?? 0), $gf['status'] ?? 'done', $gf['created_at'] ?? date('Y-m-d H:i:s')]);
+        }
+    }
+
+    // Restore logs
+    if (!empty($manifest['logs'])) {
+        $ins = $db->prepare("INSERT INTO build_logs (project_id, step, level, message, job_name, logged_at) VALUES (?,?,?,?,?,?)");
+        foreach ($manifest['logs'] as $log) {
+            $ins->execute([$newId, $log['step'], $log['level'], $log['message'], $log['job_name'] ?? null, $log['logged_at'] ?? date('Y-m-d H:i:s')]);
+        }
+    }
+
+    // Update file count
+    updateProject($db, $newId, ['file_count' => count($manifest['files'] ?? [])]);
+
+    _rmdir_recursive($tmpDir);
+
+    respond(['id' => $newId, 'title' => $p['title'], 'folder' => $folder, 'slug' => $slug]);
 }
 
 // ─── STATS ────────────────────────────────────────────────────────────
