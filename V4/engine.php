@@ -34,7 +34,7 @@ class PipelineEngine {
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_POST => true,
-            CURLOPT_TIMEOUT => 120,
+            CURLOPT_TIMEOUT => 300,
             CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_SSL_VERIFYHOST => 0,
             CURLOPT_HTTPHEADER => [
@@ -294,8 +294,7 @@ class PipelineEngine {
             ['role' => 'system', 'content' => $prompt],
             ['role' => 'user', 'content' => json_encode($userContent)],
         ];
-        $resp = $this->callAI($messages, 4000, true, 'cto');
-        $decision = $this->parseJSON($resp['content']);
+        $decision = $this->callWithRetry($messages, 4000, true, 'cto');
 
         // If user provided explicit values in advanced mode, override AI choices
         if ($hasMasterPrompt && !empty($brief['frontend'])) {
@@ -321,8 +320,7 @@ class PipelineEngine {
                 'stack' => $stack,
             ])],
         ];
-        $resp = $this->callAI($messages, 4000, true, 'architect');
-        return $this->parseJSON($resp['content']);
+        return $this->callWithRetry($messages, 4000, true, 'architect');
     }
 
     // ─── Agent Designer ───────────────────────────────────────────
@@ -370,8 +368,7 @@ class PipelineEngine {
                 'endpoints' => $arch['api_endpoints'] ?? [],
             ])],
         ];
-        $resp = $this->callAI($messages, 6000, true, 'backend');
-        return $this->parseJSON($resp['content']);
+        return $this->callWithRetry($messages, 6000, true, 'backend');
     }
 
     // ─── Agent Frontend ───────────────────────────────────────────
@@ -390,8 +387,7 @@ class PipelineEngine {
                 'components_tree' => $arch['components_tree'] ?? [],
             ])],
         ];
-        $resp = $this->callAI($messages, 6000, true, 'frontend');
-        return $this->parseJSON($resp['content']);
+        return $this->callWithRetry($messages, 6000, true, 'frontend');
     }
 
     // ─── Agent QA ─────────────────────────────────────────────────
@@ -418,8 +414,7 @@ class PipelineEngine {
                 'files' => $filesSummary,
             ])],
         ];
-        $resp = $this->callAI($messages, 5000, true, 'qa');
-        return $this->parseJSON($resp['content']);
+        return $this->callWithRetry($messages, 5000, true, 'qa');
     }
 
     // ─── Agent DevOps ─────────────────────────────────────────────
@@ -437,8 +432,7 @@ class PipelineEngine {
                 'database' => $stack['stack_decision']['database'] ?? 'sqlite',
             ])],
         ];
-        $resp = $this->callAI($messages, 3000, true, 'devops');
-        return $this->parseJSON($resp['content']);
+        return $this->callWithRetry($messages, 3000, true, 'devops');
     }
 
     // ─── README ───────────────────────────────────────────────────
