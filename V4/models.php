@@ -102,7 +102,7 @@ class AIModel {
 
     private function callProvider(string $provider, string $url, array $headers, string $keyVal, string $model, array $messages, int $maxTokens, bool $jsonMode): array {
         $payload = match ($provider) {
-            'anthropic' => $this->buildAnthropicPayload($model, $messages, $maxTokens),
+            'anthropic' => $this->buildAnthropicPayload($model, $messages, $maxTokens, $jsonMode),
             'google' => $this->buildGooglePayload($model, $messages, $maxTokens, $jsonMode),
             'openai', 'mistral' => $this->buildOpenAICompatiblePayload($model, $messages, $maxTokens, $jsonMode),
             default => $this->buildOpenAICompatiblePayload($model, $messages, $maxTokens, $jsonMode),
