@@ -99,13 +99,22 @@ async function resetKey(id) { const r = await api('reset_key', { id }); if (r.su
 // ══════════════════════════════════════════════
 // PROJECTS
 // ══════════════════════════════════════════════
-async function loadProjects(q) {
-  const params = { limit: 100 };
+let projectsPage = 0;
+const PROJECTS_PER_PAGE = 20;
+
+async function loadProjects(q, page) {
+  if (page !== undefined) projectsPage = page;
+  else if (q !== undefined) projectsPage = 0;
+  const offset = projectsPage * PROJECTS_PER_PAGE;
+  const params = { limit: PROJECTS_PER_PAGE, offset };
   if (q) params.q = q;
   const data = await api('list_projects', params);
   const projects = data.projects || [];
+  const total = data.total || 0;
+  const totalPages = Math.ceil(total / PROJECTS_PER_PAGE) || 1;
   const el = document.getElementById('projectsList');
-  if (!projects.length) { el.innerHTML = '<div class="empty-state">Aucun projet. Lancez un build !</div>'; return; }
+  const pagEl = document.getElementById('projectsPagination');
+  if (!projects.length) { el.innerHTML = '<div class="empty-state">Aucun projet. Lancez un build !</div>'; if (pagEl) pagEl.innerHTML = ''; return; }
   el.innerHTML = projects.map(p => `
     <div class="item-row" style="cursor:pointer;">
       <div onclick="showProjectDetail(${p.id})" style="flex:1;min-width:0;">
@@ -124,6 +133,12 @@ async function loadProjects(q) {
       </div>
     </div>
   `).join('');
+  if (pagEl) {
+    pagEl.innerHTML = `<span style="font-size:.75rem;color:var(--text-3);margin-right:8px;">${total} projet(s)</span>
+      <button class="btn btn-sm btn-outline" onclick="loadProjects(document.getElementById('projectSearch').value, ${projectsPage - 1})" ${projectsPage === 0 ? 'disabled' : ''}>◀ Prev</button>
+      <span style="font-size:.75rem;color:var(--text-3);margin:0 8px;">${projectsPage + 1}/${totalPages}</span>
+      <button class="btn btn-sm btn-outline" onclick="loadProjects(document.getElementById('projectSearch').value, ${projectsPage + 1})" ${projectsPage >= totalPages - 1 ? 'disabled' : ''}>Next ▶</button>`;
+  }
 }
 
 async function loadStats() {

@@ -211,17 +211,20 @@ if ($action === 'update_project') {
 }
 
 if ($action === 'list_projects') {
-    $limit = min((int)(p('limit') ?: 100), 200);
+    $limit = min((int)(p('limit') ?: 20), 100);
+    $offset = max((int)(p('offset') ?: 0), 0);
     $q = trim(p('q', ''));
     if ($q !== '') {
         $like = '%' . $q . '%';
-        $projects = $db->prepare("SELECT id, title, folder, project_type, frontend, backend, database, css_framework, status, qa_score, file_count, build_validated, created_at FROM projects WHERE title LIKE ? OR frontend LIKE ? OR backend LIKE ? OR status LIKE ? ORDER BY id DESC LIMIT ?");
-        $projects->execute([$like, $like, $like, $like, $limit]);
+        $total = $db->prepare("SELECT COUNT(*) FROM projects WHERE title LIKE ? OR frontend LIKE ? OR backend LIKE ? OR status LIKE ?"); $total->execute([$like, $like, $like, $like]);
+        $projects = $db->prepare("SELECT id, title, folder, project_type, frontend, backend, database, css_framework, status, qa_score, file_count, build_validated, created_at FROM projects WHERE title LIKE ? OR frontend LIKE ? OR backend LIKE ? OR status LIKE ? ORDER BY id DESC LIMIT ? OFFSET ?");
+        $projects->execute([$like, $like, $like, $like, $limit, $offset]);
     } else {
-        $projects = $db->prepare("SELECT id, title, folder, project_type, frontend, backend, database, css_framework, status, qa_score, file_count, build_validated, created_at FROM projects ORDER BY id DESC LIMIT ?");
-        $projects->execute([$limit]);
+        $total = $db->query("SELECT COUNT(*) FROM projects");
+        $projects = $db->prepare("SELECT id, title, folder, project_type, frontend, backend, database, css_framework, status, qa_score, file_count, build_validated, created_at FROM projects ORDER BY id DESC LIMIT ? OFFSET ?");
+        $projects->execute([$limit, $offset]);
     }
-    respond(['projects' => $projects->fetchAll()]);
+    respond(['projects' => $projects->fetchAll(), 'total' => (int)$total->fetchColumn(), 'limit' => $limit, 'offset' => $offset]);
 }
 
 if ($action === 'get_project') {
