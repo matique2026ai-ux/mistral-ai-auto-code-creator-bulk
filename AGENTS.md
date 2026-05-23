@@ -37,12 +37,12 @@
 
 ## Bugs connus (audit complet fait, 24 trouvailles)
 
-### HIGH — À corriger en priorité
-1. **Designer appelé 3x au lieu d'1x** — `engine.php:180,186,197,234-257` — Le designer est relancé dans `getDesignSystem()` pour backend et frontend car le résultat n'est pas persisté en DB. **Fix** : ajouter colonne `design_json` dans projects et la lire dans `getDesignSystem()`.
-2. **SQL injection potentielle** — `api.php`, `worker.php`, `background_build.php`, `engine.php` — Interpolation de `$var` dans des `$db->query("...")`. Bien que castées en int, le pattern est dangereux. **Fix** : remplacer par requêtes préparées.
-3. **Off-by-one itérations QA** — `engine.php:1152` — Retourne 4 quand 3 itérations naturelles. **Fix** : `min($iteration + 1, $maxIterations)`.
-4. **Windows waitForChild** — `worker.php:100-117` — `popen()` avec `start /B` ne retourne pas un vrai PID ; `usleep(500000)` n'attend pas vraiment. **Fix** : utiliser `proc_open()` ou supprimer l'attente (les jobs DB gèrent déjà l'état).
-5. **`localExportCache` toujours true** — `engine.php:1041` — `isset($this->localExportCache) || true` est du code mort. **Fix** : supprimer la condition.
+### ✅ HIGH — Corrigés dans `6c3ba0d`
+1. ~~Designer appelé 3x~~ → Persisté en DB (`design_json`), cache dans `getDesignSystem()`
+2. ~~SQL injection~~ → Toutes les requêtes remplacées par `prepare()`/`execute()`
+3. ~~Off-by-one QA~~ → `min($iteration + 1, $maxIterations)`
+4. ~~Windows waitForChild~~ → Supprimé (les jobs DB gèrent déjà l'état)
+5. ~~localExportCache dead code~~ → Condition inutile supprimée
 
 ### MEDIUM
 6. **`$db` hors scope dans `runWorkerLoop()`** — `worker.php:79,85` — `$db ?? getDB()` toujours `getDB()`. **Fix** : supprimer `$db ??`.
