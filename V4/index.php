@@ -148,7 +148,10 @@ $css_frameworks = json_decode(AC4_CSS, true);
       <!-- PROJECTS PANEL -->
       <div class="panel" id="panelProjects">
         <div class="card" style="margin-bottom:14px;">
-          <div class="card-title">📊 Statistiques</div>
+          <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+            <span>📊 Statistiques</span>
+            <button class="btn btn-sm btn-outline" onclick="cleanupBuilds()" style="color:var(--warning);border-color:rgba(250,204,21,0.3);">🧹 Nettoyer</button>
+          </div>
           <div class="stat-grid">
             <div class="stat-card"><div class="stat-value" style="color:var(--primary)" id="statKeys">0</div><div class="stat-label">Clés</div></div>
             <div class="stat-card"><div class="stat-value" style="color:var(--accent)" id="statTokens">0</div><div class="stat-label">Tokens</div></div>

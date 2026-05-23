@@ -595,6 +595,49 @@ if ($action === 'import_project') {
     respond(['id' => $newId, 'title' => $p['title'], 'folder' => $folder, 'slug' => $slug]);
 }
 
+// ─── CLEANUP ──────────────────────────────────────────────────────────
+
+if ($action === 'cleanup_builds') {
+    $days = max(1, (int)(p('days') ?: 30));
+    $deleted = ['orphans' => 0, 'old' => 0, 'errors' => 0];
+    $buildsDir = AC4_BUILDS_DIR;
+    if (!is_dir($buildsDir)) respond($deleted);
+
+    // Get all valid project slugs
+    $slugs = $db->query("SELECT folder FROM projects")->fetchAll(PDO::FETCH_COLUMN);
+    $validSlugs = [];
+    foreach ($slugs as $f) $validSlugs[] = basename($f);
+
+    $items = new DirectoryIterator($buildsDir);
+    foreach ($items as $item) {
+        if (!$item->isDir() || $item->isDot()) continue;
+        $slug = $item->getFilename();
+
+        // Orphaned: directory with no matching project
+        if (!in_array($slug, $validSlugs, true)) {
+            _rmdir_recursive($item->getPathname());
+            $deleted['orphans']++;
+            continue;
+        }
+
+        // Old completed builds
+        $stmt = $db->prepare("SELECT status, updated_at FROM projects WHERE folder LIKE ?");
+        $search = '%' . $slug . '%';
+        $stmt->execute([$search]);
+        $proj = $stmt->fetch();
+        if ($proj && in_array($proj['status'], ['done', 'failed'])) {
+            $updated = strtotime($proj['updated_at'] ?? '2000-01-01');
+            if ($updated > 0 && (time() - $updated) > $days * 86400) {
+                _rmdir_recursive($item->getPathname());
+                $deleted['old']++;
+            }
+        }
+    }
+
+    $deleted['total'] = $deleted['orphans'] + $deleted['old'];
+    respond($deleted);
+}
+
 // ─── STATS ────────────────────────────────────────────────────────────
 
 if ($action === 'get_stats') {

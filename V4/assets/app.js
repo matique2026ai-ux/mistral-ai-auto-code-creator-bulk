@@ -269,6 +269,17 @@ async function importProject(file) {
   if (r.success) { terminalLog('ok', '📥 Projet importé : ' + r.title); loadProjects(); loadStats(); showProjectDetail(r.id); }
   else { terminalLog('err', '❌ Import échoué : ' + (r.error || 'unknown')); }
 }
+async function cleanupBuilds() {
+  if (!confirm('🧹 Nettoyer les dossiers orphelins et les vieux builds (30j+) ?')) return;
+  const r = await api('cleanup_builds', { days: 30 });
+  if (r.success) {
+    const total = r.total || 0;
+    terminalLog(total > 0 ? 'ok' : 'sys', total > 0 ? `🧹 Nettoyage terminé : ${r.orphans} orphelins, ${r.old} vieux builds supprimés` : '🧹 Rien à nettoyer');
+    loadProjects(); loadStats();
+  } else {
+    terminalLog('err', '❌ Nettoyage échoué : ' + (r.error || 'unknown'));
+  }
+}
 async function rebuildProject() { if (!activeProjectId || !confirm('Relancer le build depuis zéro ?')) return; const r = await api('rebuild_build', { project_id: activeProjectId }); if (r.success) { terminalLog('sys', '🔄 Re-build lancé #' + activeProjectId); startSSE(activeProjectId); } }
 async function resumeProject() { if (!activeProjectId || !confirm('Reprendre le build interrompu ?')) return; const r = await api('resume_build', { project_id: activeProjectId }); if (r.success) { terminalLog('sys', '▶ Resume lancé #' + activeProjectId); startSSE(activeProjectId); } }
 async function quickDelete(id) { if (!confirm('Supprimer ce projet définitivement ?')) return; const r = await api('delete_project', { id }); if (r.success) { loadProjects(); loadStats(); } }
