@@ -294,7 +294,7 @@ class PipelineEngine {
             ['role' => 'system', 'content' => $prompt],
             ['role' => 'user', 'content' => json_encode($userContent)],
         ];
-        $decision = $this->callWithRetry($messages, 4000, true, 'cto');
+        $decision = $this->callWithRetry($messages, 16000, true, 'cto');
 
         // If user provided explicit values in advanced mode, override AI choices
         if ($hasMasterPrompt && !empty($brief['frontend'])) {
@@ -320,7 +320,7 @@ class PipelineEngine {
                 'stack' => $stack,
             ])],
         ];
-        return $this->callWithRetry($messages, 4000, true, 'architect');
+        return $this->callWithRetry($messages, 16000, true, 'architect');
     }
 
     // ─── Agent Designer ───────────────────────────────────────────
@@ -335,7 +335,7 @@ class PipelineEngine {
                 'architecture' => $arch,
             ])],
         ];
-        return $this->callWithRetry($messages, 6000, true, 'designer');
+        return $this->callWithRetry($messages, 16000, true, 'designer');
     }
 
     private function callWithRetry(array $messages, int $maxTokens, bool $jsonMode, string $step, int $attempts = 2): array {
@@ -368,63 +368,26 @@ class PipelineEngine {
                 'endpoints' => $arch['api_endpoints'] ?? [],
             ])],
         ];
-        return $this->callWithRetry($messages, 6000, true, 'backend');
+        return $this->callWithRetry($messages, 32000, true, 'backend');
     }
 
-    // ─── Agent Frontend (génération fichier par fichier) ──────────
+    // ─── Agent Frontend ───────────────────────────────────────────
 
     private function runFrontend(array $brief, array $stack, array $arch, array $design, array $backend): array {
-        $allFiles = [];
-
-        // Step 1: Generate file manifest (just filenames, no code)
-        $this->log('ai', 'Frontend: Planification des fichiers...');
-        $manifestMessages = [
-            ['role' => 'system', 'content' => "Tu listes les fichiers nécessaires pour un projet frontend Next.js/React. Réponds UNIQUEMENT avec ce JSON : {\"files\":[{\"filename\":\"...\",\"description\":\"brève description\"}]}. Ne mets PAS de contenu de code dans la réponse, seulement les noms de fichiers et descriptions."],
+        $prompt = $this->loadAgentPrompt('frontend');
+        $messages = [
+            ['role' => 'system', 'content' => $prompt],
             ['role' => 'user', 'content' => json_encode([
-                'project' => $brief['master_prompt'] ?? $brief['title'] ?? '',
-                'stack' => $stack['stack_decision'] ?? [],
+                'brief' => $brief,
+                'stack' => $stack,
+                'architecture' => $arch,
+                'design_system' => $design,
+                'backend' => $backend,
                 'pages' => $arch['frontend_pages'] ?? [],
-                'components' => $arch['components_tree'] ?? [],
+                'components_tree' => $arch['components_tree'] ?? [],
             ])],
         ];
-        $manifest = $this->callWithRetry($manifestMessages, 2000, true, 'frontend-manifest');
-        $fileList = $manifest['files'] ?? [];
-        if (empty($fileList)) throw new Exception('Frontend: aucun fichier planifié');
-        $this->log('ok', 'Frontend: ' . count($fileList) . ' fichiers planifiés');
-
-        // Step 2: Generate each file individually with full frontend.md context
-        $prompt = $this->loadAgentPrompt('frontend');
-        $total = count($fileList);
-        foreach ($fileList as $i => $fileDef) {
-            $this->progress(58 + intval(20 * $i / $total), "Frontend: fichier " . ($i + 1) . "/{$total}...");
-            $filename = $fileDef['filename'] ?? "page_{$i}.tsx";
-            $this->log('ai', "Frontend: Génération de {$filename}...");
-
-            $fileMessages = [
-                ['role' => 'system', 'content' => $prompt . "\n\nIMPORTANT: GÉNÈRE UNIQUEMENT LE FICHIER {$filename}. Réponse JSON: {\"filename\":\"{$filename}\",\"content\":\"code complet ici\",\"language\":\"tsx\"}"],
-                ['role' => 'user', 'content' => json_encode([
-                    'brief' => $brief,
-                    'stack' => $stack,
-                    'architecture' => $arch,
-                    'design_system' => $design,
-                    'backend' => $backend,
-                    'file_to_generate' => $filename,
-                    'file_description' => $fileDef['description'] ?? '',
-                    'all_planned_files' => array_column($fileList, 'filename'),
-                ])],
-            ];
-            $fileResult = $this->callWithRetry($fileMessages, 4000, true, 'frontend-file');
-
-            $genFilename = $fileResult['filename'] ?? $filename;
-            $genContent = $fileResult['content'] ?? '';
-            if ($genContent) {
-                $allFiles[] = ['filename' => $genFilename, 'content' => $genContent, 'language' => $fileDef['language'] ?? 'tsx'];
-            }
-            usleep(300000);
-        }
-
-        if (empty($allFiles)) throw new Exception('Frontend: aucun fichier généré');
-        return ['files' => $allFiles];
+        return $this->callWithRetry($messages, 32000, true, 'frontend');
     }
 
     // ─── Agent QA ─────────────────────────────────────────────────
@@ -451,7 +414,7 @@ class PipelineEngine {
                 'files' => $filesSummary,
             ])],
         ];
-        return $this->callWithRetry($messages, 5000, true, 'qa');
+        return $this->callWithRetry($messages, 16000, true, 'qa');
     }
 
     // ─── Agent DevOps ─────────────────────────────────────────────
@@ -469,7 +432,7 @@ class PipelineEngine {
                 'database' => $stack['stack_decision']['database'] ?? 'sqlite',
             ])],
         ];
-        return $this->callWithRetry($messages, 3000, true, 'devops');
+        return $this->callWithRetry($messages, 16000, true, 'devops');
     }
 
     // ─── README ───────────────────────────────────────────────────

@@ -9,7 +9,7 @@ define('AC4_NAME', 'AutoCoder');
 // ─── IA ───────────────────────────────────────────────────────────────────
 define('AC4_MODEL',       'devstral-2512');
 define('AC4_API_URL',     'https://api.mistral.ai/v1/chat/completions');
-define('AC4_MAX_TOKENS',  8000);
+define('AC4_MAX_TOKENS',  32000);
 define('AC4_MAX_KEY_ERRORS', 3);
 
 // ─── Pipeline ─────────────────────────────────────────────────────────────
