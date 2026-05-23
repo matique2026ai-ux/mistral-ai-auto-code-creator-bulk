@@ -64,6 +64,20 @@ function validateStackItem(string $item, string $category): string {
     return in_array($item, $allItems) ? $item : '';
 }
 
+function slugify(string $text, int $maxLen = 40): string {
+    $text = strip_tags($text);
+    $text = trim(mb_strtolower($text, 'UTF-8'));
+    $text = str_replace(
+        ['é','è','ê','ë','à','â','ä','ù','û','ü','ô','ö','î','ï','ç','ñ'],
+        ['e','e','e','e','a','a','a','u','u','u','o','o','i','i','c','n'],
+        $text
+    );
+    $text = preg_replace('/[^a-z0-9-]/', '-', $text);
+    $text = preg_replace('/-+/', '-', $text);
+    $text = trim($text, '-');
+    return substr($text, 0, $maxLen) ?: 'projet';
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  ACTIONS
 // ═══════════════════════════════════════════════════════════════════════
@@ -147,7 +161,7 @@ if ($action === 'create_project') {
     // Validate master prompt length
     if (strlen($masterPrompt) > 10000) err('Master prompt trop long (max 10000 caractères)');
 
-    $slug     = 'site_' . time() . '_' . substr(md5($masterPrompt ?: $title), 0, 8);
+    $slug     = slugify($title ?: $masterPrompt) . '-' . substr(uniqid(), -4);
     $folder   = AC4_BUILDS_WEB . '/' . $slug;
 
     $brief = $masterPrompt
