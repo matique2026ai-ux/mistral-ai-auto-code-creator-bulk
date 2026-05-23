@@ -519,6 +519,7 @@ class PipelineEngine {
 
         } catch (\Exception $e) {
             $this->log('err', '❌ Reprise interrompue : ' . $e->getMessage());
+            updateProject($this->db, $this->projectId, ['status' => 'failed']);
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }

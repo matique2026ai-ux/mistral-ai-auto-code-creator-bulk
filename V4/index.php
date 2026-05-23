@@ -200,6 +200,8 @@ $css_frameworks = json_decode(AC4_CSS, true);
       <div style="display:flex;gap:8px;margin-bottom:12px;">
         <button class="btn btn-sm btn-outline" id="detailOpenBtn" onclick="openProjectFolder()">📂 Ouvrir</button>
         <button class="btn btn-sm btn-outline" onclick="downloadProjectZip()">📦 ZIP</button>
+        <button class="btn btn-sm btn-primary" id="detailRebuildBtn" onclick="rebuildProject()" style="display:none;">🔄 Re-build</button>
+        <button class="btn btn-sm btn-primary" id="detailResumeBtn" onclick="resumeProject()" style="display:none;">▶ Resume</button>
         <button class="btn btn-sm btn-danger" onclick="deleteProject()">🗑️</button>
       </div>
       <div style="font-family:var(--mono);font-size:.75rem;max-height:200px;overflow-y:auto;background:var(--bg);padding:10px;border-radius:var(--radius-sm);" id="detailLogs"></div>

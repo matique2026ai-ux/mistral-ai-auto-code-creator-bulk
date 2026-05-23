@@ -226,6 +226,11 @@ async function showProjectDetail(id) {
     : '<span style="color:var(--text-3)">Aucun log</span>');
   document.getElementById('projectDetail').style.display = 'block';
   document.getElementById('projectDetail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Show/hide rebuild and resume buttons based on status
+  document.getElementById('detailRebuildBtn').style.display = (p.status === 'failed' || p.status === 'done') ? '' : 'none';
+  document.getElementById('detailResumeBtn').style.display = (p.status === 'failed' || p.status === 'interrupted') ? '' : 'none';
+
   updatePreview(p);
 }
 
@@ -239,6 +244,8 @@ function closeProjectDetail() { document.getElementById('projectDetail').style.d
 function openProjectFolder() { if (activeProjectFolder) window.open(activeProjectFolder + '/index.html', '_blank'); }
 function downloadProjectZip() { if (activeProjectId) window.location.href = 'api.php?action=download_zip&id=' + activeProjectId; }
 async function deleteProject() { if (!activeProjectId || !confirm('Supprimer ce projet définitivement ?')) return; const r = await api('delete_project', { id: activeProjectId }); if (r.success) { closeProjectDetail(); loadProjects(); loadStats(); } }
+async function rebuildProject() { if (!activeProjectId || !confirm('Relancer le build depuis zéro ?')) return; const r = await api('rebuild_build', { project_id: activeProjectId }); if (r.success) { terminalLog('sys', '🔄 Re-build lancé #' + activeProjectId); startSSE(activeProjectId); } }
+async function resumeProject() { if (!activeProjectId || !confirm('Reprendre le build interrompu ?')) return; const r = await api('resume_build', { project_id: activeProjectId }); if (r.success) { terminalLog('sys', '▶ Resume lancé #' + activeProjectId); startSSE(activeProjectId); } }
 async function quickDelete(id) { if (!confirm('Supprimer ce projet définitivement ?')) return; const r = await api('delete_project', { id }); if (r.success) { loadProjects(); loadStats(); } }
 function quickDownload(id) { window.location.href = 'api.php?action=download_zip&id=' + id; }
 

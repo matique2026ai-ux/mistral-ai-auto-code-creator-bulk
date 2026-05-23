@@ -266,6 +266,55 @@ if ($action === 'run_build') {
     ok(['message' => 'Build démarré en arrière-plan (queue parallèle)', 'project_id' => $id]);
 }
 
+if ($action === 'rebuild_build') {
+    set_time_limit(0);
+    $id = (int)p('project_id'); if (!$id) err('Project ID required');
+    $stmt = $db->prepare("SELECT * FROM projects WHERE id = ?"); $stmt->execute([$id]); $project = $stmt->fetch();
+    if (!$project) err('Project not found');
+
+    // Delete build directory + all data
+    $dir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($project['folder']);
+    if (is_dir($dir)) _rmdir_recursive($dir);
+    $db->prepare("DELETE FROM build_logs WHERE project_id = ?")->execute([$id]);
+    $db->prepare("DELETE FROM generated_files WHERE project_id = ?")->execute([$id]);
+    $db->prepare("DELETE FROM jobs WHERE project_id = ?")->execute([$id]);
+    updateProject($db, $id, ['status' => 'building']);
+
+    $scriptPath = __DIR__ . DIRECTORY_SEPARATOR . 'background_build.php';
+    $phpBin = PHP_BINARY;
+    $cmd = "\"$phpBin\" \"$scriptPath\" $id";
+    if (PHP_OS_FAMILY === 'Windows') {
+        $cmd = "start /B \"\" $cmd";
+        pclose(popen($cmd, 'r'));
+    } else {
+        exec("nohup $cmd > /dev/null 2>&1 &");
+    }
+
+    ok(['message' => 'Re-build démarré (build effacé + redémarré)', 'project_id' => $id]);
+}
+
+if ($action === 'resume_build') {
+    set_time_limit(0);
+    $id = (int)p('project_id'); if (!$id) err('Project ID required');
+    $stmt = $db->prepare("SELECT * FROM projects WHERE id = ?"); $stmt->execute([$id]); $project = $stmt->fetch();
+    if (!$project) err('Project not found');
+    if ($project['status'] === 'building') err('Build déjà en cours');
+
+    updateProject($db, $id, ['status' => 'building']);
+
+    $scriptPath = __DIR__ . DIRECTORY_SEPARATOR . 'background_resume.php';
+    $phpBin = PHP_BINARY;
+    $cmd = "\"$phpBin\" \"$scriptPath\" $id";
+    if (PHP_OS_FAMILY === 'Windows') {
+        $cmd = "start /B \"\" $cmd";
+        pclose(popen($cmd, 'r'));
+    } else {
+        exec("nohup $cmd > /dev/null 2>&1 &");
+    }
+
+    ok(['message' => 'Reprise du build démarrée', 'project_id' => $id]);
+}
+
 // ─── SSE (Server-Sent Events) — logs en temps réel ──────────────────
 
 if ($action === 'sse_stream') {
