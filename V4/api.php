@@ -180,22 +180,23 @@ if ($action === 'update_project') {
 
 if ($action === 'list_projects') {
     $limit = min((int)(p('limit') ?: 30), 100);
-    $projects = $db->query("SELECT id, title, folder, project_type, frontend, backend, database, css_framework, status, qa_score, file_count, build_validated, created_at FROM projects ORDER BY id DESC LIMIT $limit")->fetchAll();
-    respond(['projects' => $projects]);
+    $projects = $db->prepare("SELECT id, title, folder, project_type, frontend, backend, database, css_framework, status, qa_score, file_count, build_validated, created_at FROM projects ORDER BY id DESC LIMIT ?");
+    $projects->execute([$limit]);
+    respond(['projects' => $projects->fetchAll()]);
 }
 
 if ($action === 'get_project') {
     $id = (int)p('id'); if (!$id) err('ID missing');
-    $row = $db->query("SELECT * FROM projects WHERE id = $id")->fetch();
+    $stmt = $db->prepare("SELECT * FROM projects WHERE id = ?"); $stmt->execute([$id]); $row = $stmt->fetch();
     if (!$row) err('Project not found');
-    $files = $db->query("SELECT filepath, language, size, status FROM generated_files WHERE project_id = $id ORDER BY id ASC")->fetchAll();
-    $logs  = $db->query("SELECT step, level, message, logged_at FROM build_logs WHERE project_id = $id ORDER BY id ASC LIMIT 200")->fetchAll();
-    respond(['project' => $row, 'files' => $files, 'logs' => $logs]);
+    $files = $db->prepare("SELECT filepath, language, size, status FROM generated_files WHERE project_id = ? ORDER BY id ASC"); $files->execute([$id]);
+    $logs  = $db->prepare("SELECT step, level, message, logged_at FROM build_logs WHERE project_id = ? ORDER BY id ASC LIMIT 200"); $logs->execute([$id]);
+    respond(['project' => $row, 'files' => $files->fetchAll(), 'logs' => $logs->fetchAll()]);
 }
 
 if ($action === 'delete_project') {
     $id = (int)p('id'); if (!$id) err('ID missing');
-    $row = $db->query("SELECT folder FROM projects WHERE id = $id")->fetch();
+    $stmt = $db->prepare("SELECT folder FROM projects WHERE id = ?"); $stmt->execute([$id]); $row = $stmt->fetch();
     if ($row) {
         $dir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($row['folder']);
         if (is_dir($dir)) _rmdir_recursive($dir);
@@ -209,8 +210,9 @@ if ($action === 'delete_project') {
 if ($action === 'run_build') {
     set_time_limit(0);
     $id = (int)p('project_id'); if (!$id) err('Project ID required');
-    $project = $db->query("SELECT * FROM projects WHERE id = $id")->fetch();
+    $stmt = $db->prepare("SELECT * FROM projects WHERE id = ?"); $stmt->execute([$id]); $project = $stmt->fetch();
     if (!$project) err('Project not found');
+
 
     // Clear old logs
     $db->prepare("DELETE FROM build_logs WHERE project_id = ?")->execute([$id]);
@@ -274,7 +276,7 @@ if ($action === 'sse_stream') {
         }
 
         // Check project status
-        $project = $db->query("SELECT status, qa_score FROM projects WHERE id = $id")->fetch();
+        $pStmt = $db->prepare("SELECT status, qa_score FROM projects WHERE id = ?"); $pStmt->execute([$id]); $project = $pStmt->fetch();
         if ($project) {
             $statusData = json_encode([
                 'status' => $project['status'],
@@ -299,7 +301,7 @@ if ($action === 'sse_stream') {
 
 if ($action === 'download_zip') {
     $id = (int)p('id'); if (!$id) err('Project ID required');
-    $project = $db->query("SELECT * FROM projects WHERE id = $id")->fetch();
+    $stmt = $db->prepare("SELECT * FROM projects WHERE id = ?"); $stmt->execute([$id]); $project = $stmt->fetch();
     if (!$project) err('Project not found');
 
     $folderName = basename($project['folder']);
@@ -340,7 +342,7 @@ if ($action === 'get_stats') {
 
 if ($action === 'get_logs') {
     $id = (int)p('project_id'); if (!$id) err('Project ID required');
-    $logs = $db->query("SELECT step, level, message, logged_at FROM build_logs WHERE project_id = $id ORDER BY id ASC")->fetchAll();
+    $lStmt = $db->prepare("SELECT step, level, message, logged_at FROM build_logs WHERE project_id = ? ORDER BY id ASC"); $lStmt->execute([$id]); $logs = $lStmt->fetchAll();
     respond(['logs' => $logs]);
 }
 

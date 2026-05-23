@@ -112,6 +112,9 @@ function migrateDB(PDO $db): void {
     try {
         $db->exec("ALTER TABLE api_keys ADD COLUMN model_override TEXT DEFAULT ''");
     } catch (\Exception $e) {}
+    try {
+        $db->exec("ALTER TABLE projects ADD COLUMN design_json TEXT");
+    } catch (\Exception $e) {}
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────

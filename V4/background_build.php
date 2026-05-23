@@ -13,7 +13,7 @@ $projectId = (int)($argv[1] ?? 0);
 if (!$projectId) { fwrite(STDERR, "Usage: php background_build.php <project_id>\n"); exit(1); }
 
 $db = getDB();
-$project = $db->query("SELECT * FROM projects WHERE id = $projectId")->fetch();
+$stmt = $db->prepare("SELECT * FROM projects WHERE id = ?"); $stmt->execute([$projectId]); $project = $stmt->fetch();
 if (!$project) { fwrite(STDERR, "Project #$projectId not found\n"); exit(1); }
 
 // Create build directory
@@ -41,7 +41,7 @@ require_once __DIR__ . '/worker.php';
 runWorkerLoop($projectId, $queue, 'bg_' . uniqid(), 2);
 
 // Final status
-$project = $db->query("SELECT * FROM projects WHERE id = $projectId")->fetch();
+$stmt = $db->prepare("SELECT * FROM projects WHERE id = ?"); $stmt->execute([$projectId]); $project = $stmt->fetch();
 $status = $project['status'] ?? 'unknown';
 $failed = $queue->getFailedJobs($projectId);
 

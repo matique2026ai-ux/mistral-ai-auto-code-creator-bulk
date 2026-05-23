@@ -88,7 +88,7 @@ class PipelineEngine {
         $this->projectId = $projectId;
         $this->currentJobName = $jobName;
 
-        $project = $this->db->query("SELECT * FROM projects WHERE id = $projectId")->fetch();
+        $stmt = $this->db->prepare("SELECT * FROM projects WHERE id = ?"); $stmt->execute([$projectId]); $project = $stmt->fetch();
         if (!$project) throw new Exception("Project #$projectId not found");
 
         $this->projectFolder = $project['folder'];
@@ -178,7 +178,8 @@ class PipelineEngine {
         $architecture = @json_decode($project['arch_json'], true) ?: [];
         $this->progress(28, 'Designer : Design system...');
         $design = $this->runDesigner($brief, $stackDecision, $architecture);
-        $this->log('ok', 'Design system créé');
+        updateProject($this->db, $this->projectId, ['design_json' => json_encode($design)]);
+        $this->log('ok', 'Design system créé et persisté');
         return $design;
     }
 
@@ -232,7 +233,11 @@ class PipelineEngine {
     }
 
     private function getDesignSystem(array $project): array {
-        // Design system is reconstructed from context each time
+        // Use cached design if already generated
+        $cached = @json_decode($project['design_json'] ?? '', true);
+        if ($cached) return $cached;
+
+        // Fallback: generate from context (legacy path)
         $brief = @json_decode($project['brief'], true) ?: [];
         $brief['title'] = $project['title'];
         $brief['project_id'] = $project['id'];
@@ -1035,15 +1040,12 @@ class PipelineEngine {
             $candidates[] = $resolved . DIRECTORY_SEPARATOR . 'index' . $ext;
         }
 
-        // Also check the localExports keys directly
+        // Check against known generated files
         foreach ($candidates as $c) {
             $c = ltrim($c, '/');
-            if (isset($this->localExportCache) || true) {
-                // Check against known files
-                foreach ($this->generatedFiles as $gf) {
-                    $gf = str_replace('\\', '/', $gf);
-                    if ($gf === $c) return $c;
-                }
+            foreach ($this->generatedFiles as $gf) {
+                $gf = str_replace('\\', '/', $gf);
+                if ($gf === $c) return $c;
             }
         }
 
@@ -1149,7 +1151,7 @@ class PipelineEngine {
             'issues' => $finalIssues,
             'fixes' => $finalFixes,
             'build_errors' => $allBuildErrors,
-            'iterations' => $iteration + 1,
+            'iterations' => min($iteration + 1, $maxIterations),
             'build_success' => empty(array_filter($buildResult['errors'] ?? [], fn($e) => $e['severity'] === 'error')),
         ];
     }

@@ -75,15 +75,16 @@ function runWorkerLoop(int $projectId, JobQueue $queue, string $workerId, int $m
     // Check overall project status
     $status = $queue->isProjectFinished($projectId);
 
+    $db = getDB();
     if ($status === 'done') {
-        updateProject($db ?? getDB(), $projectId, ['status' => 'done']);
+        updateProject($db, $projectId, ['status' => 'done']);
         fwrite(STDERR, "[worker] Project #$projectId completed successfully\n");
         return true;
     } elseif ($status === 'failed') {
         $failed = $queue->getFailedJobs($projectId);
         $errors = array_map(fn($j) => "{$j['job_name']}: {$j['error_message']}", $failed);
-        updateProject($db ?? getDB(), $projectId, ['status' => 'failed']);
-        appendLog(getDB(), $projectId, 'worker', 'err', 'Jobs failed: ' . implode('; ', $errors));
+        updateProject($db, $projectId, ['status' => 'failed']);
+        appendLog($db, $projectId, 'worker', 'err', 'Jobs failed: ' . implode('; ', $errors));
         fwrite(STDERR, "[worker] Project #$projectId failed: " . implode('; ', $errors) . "\n");
         return true;
     }
@@ -111,10 +112,9 @@ function waitForChild(int $pid): void {
     if (PHP_OS_FAMILY !== 'Windows') {
         // On Unix, wait for the specific child
         pcntl_waitpid($pid, $status);
-    } else {
-        // On Windows, just sleep a bit (popen is blocking-ish)
-        usleep(500000);
     }
+    // On Windows, child process updates DB state independently via completeJob/failJob.
+    // No OS-level wait needed — the job queue handles ordering.
 }
 
 function executeJobSync(PipelineEngine $engine, int $projectId, array $job, JobQueue $queue): void {
@@ -123,7 +123,7 @@ function executeJobSync(PipelineEngine $engine, int $projectId, array $job, JobQ
     try {
         // Load context from DB
         $db = getDB();
-        $project = $db->query("SELECT * FROM projects WHERE id = $projectId")->fetch();
+        $stmt = $db->prepare("SELECT * FROM projects WHERE id = ?"); $stmt->execute([$projectId]); $project = $stmt->fetch();
 
         // Reconstruct stack and architecture from DB
         $stackDecision = [
