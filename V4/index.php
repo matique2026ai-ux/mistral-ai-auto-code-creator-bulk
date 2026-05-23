@@ -14,7 +14,7 @@ $css_frameworks = json_decode(AC4_CSS, true);
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AutoCoder V4 — Full-Stack AI Architect</title>
+<title>AkrourCoder V4 — Full-Stack AI Architect</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/style.css">
 </head>
@@ -23,7 +23,7 @@ $css_frameworks = json_decode(AC4_CSS, true);
   <!-- ═══ SIDEBAR ═══ -->
   <aside class="sidebar">
     <div class="sb-header">
-      <div class="logo"><span>AutoCoder</span> <small>V4</small></div>
+      <div class="logo"><span>AkrourCoder</span> <small>V4</small></div>
       <p style="font-size:.7rem;color:var(--text-3);">Architecte IA Full-Stack — 7 Agents</p>
     </div>
     <div class="sb-body">
@@ -212,11 +212,11 @@ $css_frameworks = json_decode(AC4_CSS, true);
           <span class="term-dot" style="background:var(--warning)"></span>
           <span class="term-dot" style="background:var(--success)"></span>
         </div>
-        <span class="term-title">autocoder_v4_pipeline.log</span>
+        <span class="term-title">akrourcoder_v4_pipeline.log</span>
         <button class="btn btn-sm btn-outline" onclick="clearTerminal()">Clear</button>
       </div>
       <div class="term-body" id="terminalConsole">
-        <div class="log-row"><span class="log-time">-----</span><span class="log-tag tag-sys">Engine</span><span class="log-msg">AutoCoder V4 prêt. Configurez votre brief et lancez la construction.</span></div>
+        <div class="log-row"><span class="log-time">-----</span><span class="log-tag tag-sys">Engine</span><span class="log-msg">AkrourCoder V4 prêt. Configurez votre brief et lancez la construction.</span></div>
       </div>
     </div>
   </main>

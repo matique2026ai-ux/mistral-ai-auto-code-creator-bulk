@@ -1,6 +1,6 @@
 <?php
 /**
- * AutoCoder V4 — AI Model Router
+ * AkrourCoder V4 — AI Model Router
  * Abstraction multi-fournisseur : Mistral → OpenAI → Claude → Gemini
  * Fallback automatique entre providers, rotation de clés, retry.
  */

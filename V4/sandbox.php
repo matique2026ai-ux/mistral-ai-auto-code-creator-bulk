@@ -1,6 +1,6 @@
 <?php
 /**
- * AutoCoder V4 — Sandbox d'exécution sécurisée
+ * AkrourCoder V4 — Sandbox d'exécution sécurisée
  * Isole les builds dans des conteneurs Docker temporaires.
  * Fallback vers exec() locale si Docker n'est pas disponible.
  */

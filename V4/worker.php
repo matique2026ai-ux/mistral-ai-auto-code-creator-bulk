@@ -1,6 +1,6 @@
 <?php
 /**
- * AutoCoder V4 — Worker Process
+ * AkrourCoder V4 — Worker Process
  * Consomme les jobs de la queue SQLite et les exécute en parallèle.
  * Usage: php worker.php <project_id> [--daemon]
  *

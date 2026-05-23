@@ -1,6 +1,6 @@
 <?php
 /**
- * AutoCoder V4 — Job Runner (child process)
+ * AkrourCoder V4 — Job Runner (child process)
  * Exécute un job individuel du pipeline.
  * Usage: php job_runner.php <project_id> <job_id> <job_name>
  */

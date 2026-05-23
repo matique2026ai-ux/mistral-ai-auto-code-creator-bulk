@@ -1,6 +1,6 @@
 <?php
 /**
- * AutoCoder V4 — Job Queue (SQLite-based)
+ * AkrourCoder V4 — Job Queue (SQLite-based)
  * Gère l'enqueue, le dispatch, et le cycle de vie des jobs du pipeline.
  * Supporte le parallélisme : les jobs sans dépendances mutuelles tournent en même temps.
  */

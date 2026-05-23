@@ -1,6 +1,6 @@
 <?php
 /**
- * AutoCoder V4 — Base de Données
+ * AkrourCoder V4 — Base de Données
  */
 require_once __DIR__ . '/config.php';
 

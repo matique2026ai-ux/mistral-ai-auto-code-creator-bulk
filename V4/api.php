@@ -1,6 +1,6 @@
 <?php
 /**
- * AutoCoder V4 — API Endpoints
+ * AkrourCoder V4 — API Endpoints
  */
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';

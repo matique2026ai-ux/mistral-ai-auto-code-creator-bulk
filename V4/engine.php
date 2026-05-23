@@ -1,6 +1,6 @@
 <?php
 /**
- * AutoCoder V4 — Pipeline Engine
+ * AkrourCoder V4 — Pipeline Engine
  * Orchestrateur multi-agents : CTO → Architect → Designer → Backend → Frontend → QA → DevOps
  */
 require_once __DIR__ . '/config.php';
@@ -288,7 +288,7 @@ class PipelineEngine {
         $this->projectFolder = $brief['folder'];
 
         $this->log('sys', '═══════════════════════════════════════════════════');
-        $this->log('sys', '🤖 AutoCoder V4 — 7 AGENTS SPÉCIALISÉS PRÊTS');
+        $this->log('sys', '🤖 AkrourCoder V4 — 7 AGENTS SPÉCIALISÉS PRÊTS');
         $this->log('sys', '═══════════════════════════════════════════════════');
 
         try {
@@ -1199,7 +1199,7 @@ class PipelineEngine {
             . implode("\n", array_map(fn($p) => "- **{$p['route']}** — {$p['title']}: {$p['description']}", $arch['frontend_pages'] ?? [])) . "\n\n"
             . "## API\n"
             . implode("\n", array_map(fn($e) => "- `{$e['method']} {$e['path']}` — {$e['description']}", $arch['api_endpoints'] ?? [])) . "\n\n"
-            . "## Généré par AutoCoder V4\n"
+            . "## Généré par AkrourCoder V4\n"
             . "- Modèle : " . AC4_MODEL . "\n"
             . "- Version : " . AC4_VERSION . "\n"
             . "- Date : " . date('Y-m-d H:i:s') . "\n"

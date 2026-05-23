@@ -1,4 +1,4 @@
-# Projet : AutoCoder V4
+# Projet : AkrourCoder V4
 
 **Description** : Générateur de code IA full-stack autonome écrit en PHP. Pipeline de 7 agents spécialisés (CTO → Architecte → Designer → Backend || Frontend → QA → DevOps) via API Mistral AI.
 

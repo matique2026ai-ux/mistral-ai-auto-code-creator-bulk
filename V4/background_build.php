@@ -1,6 +1,6 @@
 <?php
 /**
- * AutoCoder V4 — Background Build Runner
+ * AkrourCoder V4 — Background Build Runner
  * Utilise le JobQueue pour exécuter le pipeline de manière parallélisée.
  * Usage: php background_build.php <project_id>
  */

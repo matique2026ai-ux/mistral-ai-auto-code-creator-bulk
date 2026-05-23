@@ -1,10 +1,10 @@
 <?php
 /**
- * AutoCoder V4 — Configuration Globale
+ * AkrourCoder V4 — Configuration Globale
  * Architecte IA Full-Stack Multi-Stack
  */
 define('AC4_VERSION', '4.0.0');
-define('AC4_NAME', 'AutoCoder');
+define('AC4_NAME', 'AkrourCoder');
 
 // ─── IA — Providers ────────────────────────────────────────────────────────
 define('AC4_MODEL',       'devstral-2512');
@@ -69,7 +69,7 @@ define('AC4_ROOT', __DIR__);
 define('AC4_BUILDS_DIR', AC4_ROOT . DIRECTORY_SEPARATOR . 'builds');
 define('AC4_BUILDS_WEB', 'builds');
 define('AC4_AGENTS_DIR', AC4_ROOT . DIRECTORY_SEPARATOR . 'agents');
-define('AC4_DB_FILE', AC4_ROOT . '/autocoder_v4.sqlite');
+define('AC4_DB_FILE', AC4_ROOT . '/akrourcoder_v4.sqlite');
 
 // ─── Technologies supportées ─────────────────────────────────────────────
 define('AC4_STACKS', json_encode([
