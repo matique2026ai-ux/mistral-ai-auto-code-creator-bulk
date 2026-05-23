@@ -182,9 +182,7 @@ class PipelineEngine {
             $this->progress(58, 'Développeur Frontend : Génération des interfaces...');
             $this->log('ai', 'Agent Frontend : Génération du code UI...');
             $frontendResult = $this->runFrontend($brief, $stackDecision, $architecture, $designSystem, $backendResult);
-
-            foreach (($frontendResult['files'] ?? []) as $f) $this->writeFile($f['filename'], $f['content']);
-            $this->log('ok', 'Frontend généré : ' . count($frontendResult['files'] ?? []) . " fichiers");
+            // files already written inside runFrontend
 
             // ── ÉTAPE 6: QA — Validation du code ─────────────────────
             $this->progress(75, 'QA Engineer : Inspection qualité complète...');
@@ -410,7 +408,10 @@ class PipelineEngine {
             $res = $this->callWithRetry($fileMsg, 4000, true, 'frontend-file');
             $fn = $res['filename'] ?? $filename;
             $content = $res['content'] ?? '';
-            if ($content) $allFiles[] = ['filename' => $fn, 'content' => $content];
+            if ($content) {
+                $this->writeFile($fn, $content);
+                $allFiles[] = ['filename' => $fn, 'content' => $content];
+            }
             usleep(200000);
         }
         if (empty($allFiles)) throw new Exception('Frontend: aucun fichier généré');
