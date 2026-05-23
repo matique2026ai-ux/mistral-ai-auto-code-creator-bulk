@@ -293,6 +293,24 @@ class PipelineEngine {
             $this->log('ai', 'Reconstitution du contexte backend...');
             $backendResult = $this->runBackendBrief($architecture);
 
+            // Check if frontend files exist; if not, regenerate them
+            $hasFrontend = false;
+            $feExtensions = ['.html', '.htm', '.jsx', '.tsx', '.vue', '.svelte', '.astro', '.dart', '.kt', '.swift'];
+            foreach ($existingFiles as $f) {
+                $ext = '.' . ($f['language'] ?? '');
+                if (in_array($ext, $feExtensions)) { $hasFrontend = true; break; }
+            }
+
+            if (!$hasFrontend && $stackDecision['stack_decision']['frontend'] !== 'none') {
+                $this->progress(72, 'Frontend (régénération fichiers manquants)...');
+                $this->log('ai', 'Aucun fichier frontend trouvé — regénération...');
+                $frontendResult = $this->runFrontend($brief, $stackDecision, $architecture, $designSystem, $backendResult);
+                $existingFiles = $this->scanFiles($buildDir); // Re-scan after generation
+                $this->log('ok', 'Frontend regénéré : ' . count($frontendResult['files'] ?? []) . ' fichiers');
+            } else {
+                $this->log('ok', 'Frontend déjà présent, reprise directe');
+            }
+
             // ── ÉTAPE 6: QA — Validation + Build + Fix Loop ────────
             $this->progress(75, 'QA Engineer : Inspection + Build + Correction (max 3 itérations)...');
             $this->log('test', 'Agent QA : Validation du code avec boucle de correction...');
@@ -506,48 +524,89 @@ class PipelineEngine {
     // ─── Agent Frontend (fichier par fichier) ────────────────────
 
     private function runFrontend(array $brief, array $stack, array $arch, array $design, array $backend): array {
+        $feType = $stack['stack_decision']['frontend'] ?? 'html_css_js';
+
         // Step 1: Plan — liste des fichiers uniquement
         $this->log('ai', 'Frontend: Planification des fichiers...');
-        $planMessages = [
-            ['role' => 'system', 'content' => 'Tu listes les fichiers nécessaires pour un site Next.js. Réponse JSON : {"files":[{"filename":"...","description":"..."}]}. AUCUN CODE.'],
-            ['role' => 'user', 'content' => json_encode([
-                'project' => $brief['master_prompt'] ?? $brief['title'] ?? '',
-                'stack' => $stack['stack_decision'] ?? [],
-                'pages' => $arch['frontend_pages'] ?? [],
-            ])],
-        ];
-        $plan = $this->callWithRetry($planMessages, 1500, true, 'frontend-plan');
-        $fileList = $plan['files'] ?? [];
-        if (empty($fileList)) throw new Exception('Frontend: plan vide');
-        $this->log('ok', 'Frontend: ' . count($fileList) . ' fichiers à générer');
 
-        // Step 2: Génération fichier par fichier
+        // For static HTML, always generate 1 file
+        if ($feType === 'html_css_js') {
+            $fileList = [['filename' => 'index.html', 'description' => 'Page principale unique HTML + CSS inline + JS']];
+            $this->log('ok', 'Frontend: site statique — 1 fichier (index.html)');
+        } else {
+            $frontendLabel = match ($feType) {
+                'react', 'vite' => 'React + Vite',
+                'next' => 'Next.js 14',
+                'vue' => 'Vue 3',
+                'flutter' => 'Flutter',
+                'kotlin' => 'Android Kotlin',
+                'swiftui' => 'SwiftUI',
+                default => $feType,
+            };
+            $planMessages = [
+                ['role' => 'system', 'content' => "Tu listes les fichiers nécessaires pour un projet {$frontendLabel}. MAXIMUM 5 fichiers. Réponse JSON : {\"files\":[{\"filename\":\"...\",\"description\":\"...\"}]}. AUCUN CODE. Garde le plan minimal (1 fichier = 1 composant, regroupe tout le nécessaire)."],
+                ['role' => 'user', 'content' => json_encode([
+                    'project' => $brief['master_prompt'] ?? $brief['title'] ?? '',
+                    'stack' => $stack['stack_decision'] ?? [],
+                    'pages' => $arch['frontend_pages'] ?? [],
+                ])],
+            ];
+            $plan = $this->callWithRetry($planMessages, 1500, true, 'frontend-plan');
+            $fileList = $plan['files'] ?? [];
+            if (empty($fileList)) throw new Exception('Frontend: plan vide');
+            $this->log('ok', 'Frontend: ' . count($fileList) . ' fichiers à générer');
+        }
+
+        // Step 2: Génération
         $prompt = $this->loadAgentPrompt('frontend');
         $allFiles = [];
         $total = count($fileList);
-        foreach ($fileList as $i => $fileDef) {
-            $this->progress(55 + intval(20 * $i / $total), "Frontend: fichier " . ($i + 1) . "/{$total}");
-            $filename = $fileDef['filename'] ?? "f{$i}.tsx";
-            $this->log('ai', "Frontend [{$i}/{$total}]: {$filename}...");
+
+        if ($feType === 'html_css_js') {
+            // Static HTML: generate all content in a single API call
+            $this->progress(60, 'Frontend: index.html...');
+            $this->log('ai', 'Frontend: génération index.html complet...');
             $fileMsg = [
-                ['role' => 'system', 'content' => $prompt . "\n\nGénère UNIQUEMENT le fichier {$filename}. Réponse JSON : {\"filename\":\"{$filename}\",\"content\":\"...\",\"language\":\"...\"}"],
+                ['role' => 'system', 'content' => $prompt . "\n\nGénère un fichier HTML unique. Réponse JSON : {\"filename\":\"index.html\",\"content\":\"...\",\"language\":\"html\"}"],
                 ['role' => 'user', 'content' => json_encode([
                     'brief' => $brief, 'stack' => $stack, 'architecture' => $arch,
                     'design_system' => $design, 'backend' => $backend,
                     'pages' => $arch['frontend_pages'] ?? [],
-                    'file_to_generate' => $filename,
-                    'all_planned_files' => array_column($fileList, 'filename'),
                 ])],
             ];
-            $res = $this->callWithRetry($fileMsg, 4000, true, 'frontend-file');
-            $fn = $res['filename'] ?? $filename;
+            $res = $this->callWithRetry($fileMsg, 8000, true, 'frontend-file');
             $content = $res['content'] ?? '';
             if ($content) {
-                $this->writeFile($fn, $content);
-                $allFiles[] = ['filename' => $fn, 'content' => $content];
+                $this->writeFile('index.html', $content);
+                $allFiles[] = ['filename' => 'index.html', 'content' => $content, 'language' => 'html'];
             }
-            usleep(200000);
+        } else {
+            // File-by-file for component-based frameworks (max ~5 files from plan)
+            foreach ($fileList as $i => $fileDef) {
+                $this->progress(55 + intval(20 * $i / $total), "Frontend: fichier " . ($i + 1) . "/{$total}");
+                $filename = $fileDef['filename'] ?? "f{$i}.tsx";
+                $this->log('ai', "Frontend [{$i}/{$total}]: {$filename}...");
+                $fileMsg = [
+                    ['role' => 'system', 'content' => $prompt . "\n\nGénère UNIQUEMENT le fichier {$filename}. Réponse JSON : {\"filename\":\"{$filename}\",\"content\":\"...\",\"language\":\"...\"}"],
+                    ['role' => 'user', 'content' => json_encode([
+                        'brief' => $brief, 'stack' => $stack, 'architecture' => $arch,
+                        'design_system' => $design, 'backend' => $backend,
+                        'pages' => $arch['frontend_pages'] ?? [],
+                        'file_to_generate' => $filename,
+                        'all_planned_files' => array_column($fileList, 'filename'),
+                    ])],
+                ];
+                $res = $this->callWithRetry($fileMsg, 6000, true, 'frontend-file');
+                $fn = $res['filename'] ?? $filename;
+                $content = $res['content'] ?? '';
+                if ($content) {
+                    $this->writeFile($fn, $content);
+                    $allFiles[] = ['filename' => $fn, 'content' => $content];
+                }
+                usleep(200000);
+            }
         }
+
         if (empty($allFiles)) throw new Exception('Frontend: aucun fichier généré');
         $this->log('ok', 'Frontend généré : ' . count($allFiles) . ' fichiers');
         return ['files' => $allFiles];
