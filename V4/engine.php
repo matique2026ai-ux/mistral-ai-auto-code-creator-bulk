@@ -78,12 +78,12 @@ class PipelineEngine {
         $step = debug_backtrace()[1]['function'] ?? 'engine';
         appendLog($this->db, $this->projectId, $step, $level, $message);
         echo json_encode(['type' => 'log', 'level' => $level, 'step' => $step, 'message' => $message]) . "\n";
-        ob_flush(); flush();
+        if (ob_get_level()) ob_flush(); flush();
     }
 
     private function progress(int $pct, string $label): void {
         echo json_encode(['type' => 'progress', 'pct' => $pct, 'label' => $label]) . "\n";
-        ob_flush(); flush();
+        if (ob_get_level()) ob_flush(); flush();
     }
 
     // ─── JSON Parser robuste ──────────────────────────────────────────
