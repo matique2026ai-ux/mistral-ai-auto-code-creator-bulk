@@ -585,10 +585,10 @@ class PipelineEngine {
         }
 
         $messages = [
-            ['role' => 'system', 'content' => $prompt],
+            ['role' => 'system', 'content' => $prompt . "\n\nRéponds en JSON compact, uniquement les champs demandés. Pas de texte hors JSON."],
             ['role' => 'user', 'content' => json_encode($userContent)],
         ];
-        $decision = $this->callWithRetry($messages, 16000, true, 'cto');
+        $decision = $this->callWithRetry($messages, 8000, true, 'cto');
 
         // If user provided explicit values in advanced mode, override AI choices
         if ($hasMasterPrompt && !empty($brief['frontend'])) {
@@ -608,13 +608,13 @@ class PipelineEngine {
     private function runArchitect(array $brief, array $stack): array {
         $prompt = $this->loadAgentPrompt('architect');
         $messages = [
-            ['role' => 'system', 'content' => $prompt],
+            ['role' => 'system', 'content' => $prompt . "\n\nRéponds en JSON compact. Limite les descriptions à 1 phrase. Pas de texte hors JSON."],
             ['role' => 'user', 'content' => json_encode([
                 'brief' => $brief,
                 'stack' => $stack,
             ])],
         ];
-        return $this->callWithRetry($messages, 16000, true, 'architect');
+        return $this->callWithRetry($messages, 8000, true, 'architect');
     }
 
     // ─── Agent Designer ───────────────────────────────────────────
@@ -622,14 +622,14 @@ class PipelineEngine {
     private function runDesigner(array $brief, array $stack, array $arch): array {
         $prompt = $this->loadAgentPrompt('designer');
         $messages = [
-            ['role' => 'system', 'content' => $prompt],
+            ['role' => 'system', 'content' => $prompt . "\n\nRéponds en JSON compact. 3-4 couleurs suffisent. Pas de texte hors JSON."],
             ['role' => 'user', 'content' => json_encode([
                 'brief' => $brief,
                 'stack' => $stack,
                 'architecture' => $arch,
             ])],
         ];
-        return $this->callWithRetry($messages, 16000, true, 'designer');
+        return $this->callWithRetry($messages, 8000, true, 'designer');
     }
 
     private function callWithRetry(array $messages, int $maxTokens, bool $jsonMode, string $step, int $attempts = 2): array {
@@ -652,7 +652,7 @@ class PipelineEngine {
     private function runBackend(array $brief, array $stack, array $arch, array $design): array {
         $prompt = $this->loadAgentPrompt('backend');
         $messages = [
-            ['role' => 'system', 'content' => $prompt],
+            ['role' => 'system', 'content' => $prompt . "\n\nGénère UNIQUEMENT les fichiers essentiels (controllers, models, routes). Un fichier = max 300 lignes, 1 responsabilité. Code compact et fonctionnel direct."],
             ['role' => 'user', 'content' => json_encode([
                 'brief' => $brief,
                 'stack' => $stack,
@@ -662,7 +662,7 @@ class PipelineEngine {
                 'endpoints' => $arch['api_endpoints'] ?? [],
             ])],
         ];
-        return $this->callWithRetry($messages, 32000, true, 'backend');
+        return $this->callWithRetry($messages, 16000, true, 'backend');
     }
 
     // ─── Agent Frontend (fichier par fichier) ────────────────────
@@ -688,14 +688,14 @@ class PipelineEngine {
                 default => $feType,
             };
             $planMessages = [
-                ['role' => 'system', 'content' => "Tu listes les fichiers nécessaires pour un projet {$frontendLabel}. MAXIMUM 5 fichiers. Réponse JSON : {\"files\":[{\"filename\":\"...\",\"description\":\"...\"}]}. AUCUN CODE. Garde le plan minimal (1 fichier = 1 composant, regroupe tout le nécessaire)."],
+                ['role' => 'system', 'content' => "Tu listes les fichiers nécessaires pour un projet {$frontendLabel}. MAXIMUM 3 fichiers. Réponse JSON : {\"files\":[{\"filename\":\"...\",\"description\":\"...\"}]}. AUCUN CODE. Regroupe tout dans le minimum de fichiers (1 fichier = 1 composant majeur ou page)."],
                 ['role' => 'user', 'content' => json_encode([
                     'project' => $brief['master_prompt'] ?? $brief['title'] ?? '',
                     'stack' => $stack['stack_decision'] ?? [],
                     'pages' => $arch['frontend_pages'] ?? [],
                 ])],
             ];
-            $plan = $this->callWithRetry($planMessages, 1500, true, 'frontend-plan');
+            $plan = $this->callWithRetry($planMessages, 1000, true, 'frontend-plan');
             $fileList = $plan['files'] ?? [];
             if (empty($fileList)) throw new Exception('Frontend: plan vide');
             $this->log('ok', 'Frontend: ' . count($fileList) . ' fichiers à générer');
@@ -718,7 +718,7 @@ class PipelineEngine {
                     'pages' => $arch['frontend_pages'] ?? [],
                 ])],
             ];
-            $res = $this->callWithRetry($fileMsg, 8000, true, 'frontend-file');
+            $res = $this->callWithRetry($fileMsg, 5000, true, 'frontend-file');
             $content = $res['content'] ?? '';
             if ($content) {
                 $this->writeFile('index.html', $content);
@@ -740,7 +740,7 @@ class PipelineEngine {
                         'all_planned_files' => array_column($fileList, 'filename'),
                     ])],
                 ];
-                $res = $this->callWithRetry($fileMsg, 6000, true, 'frontend-file');
+                $res = $this->callWithRetry($fileMsg, 4000, true, 'frontend-file');
                 $fn = $res['filename'] ?? $filename;
                 $content = $res['content'] ?? '';
                 if ($content) {
@@ -773,14 +773,14 @@ class PipelineEngine {
         }
 
         $messages = [
-            ['role' => 'system', 'content' => $prompt],
+            ['role' => 'system', 'content' => $prompt . "\n\nRapport compact : ne liste que les problèmes réels. Ignore les warnings cosmétiques."],
             ['role' => 'user', 'content' => json_encode([
                 'brief' => $brief,
                 'stack' => $stack,
                 'files' => $filesSummary,
             ])],
         ];
-        return $this->callWithRetry($messages, 16000, true, 'qa');
+        return $this->callWithRetry($messages, 8000, true, 'qa');
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -1159,7 +1159,7 @@ class PipelineEngine {
     private function runDevOps(array $brief, array $stack, array $arch): array {
         $prompt = $this->loadAgentPrompt('devops');
         $messages = [
-            ['role' => 'system', 'content' => $prompt],
+            ['role' => 'system', 'content' => $prompt . "\n\nGénère uniquement Dockerfile + docker-compose.yml. Un fichier = max 200 lignes."],
             ['role' => 'user', 'content' => json_encode([
                 'brief' => $brief,
                 'stack' => $stack,
@@ -1169,7 +1169,7 @@ class PipelineEngine {
                 'database' => $stack['stack_decision']['database'] ?? 'sqlite',
             ])],
         ];
-        return $this->callWithRetry($messages, 16000, true, 'devops');
+        return $this->callWithRetry($messages, 8000, true, 'devops');
     }
 
     // ─── README ───────────────────────────────────────────────────
