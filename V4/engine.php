@@ -242,6 +242,131 @@ class PipelineEngine {
         }
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    //  RESUME — reprendre un build interrompu
+    // ═══════════════════════════════════════════════════════════════════
+
+    public function resume(array $project): array {
+        $this->projectId = $project['id'];
+        $this->projectFolder = $project['folder'];
+
+        $this->log('sys', '═══════════════════════════════════════════════════');
+        $this->log('sys', '🔄 Reprise du build #' . $project['id']);
+        $this->log('sys', '═══════════════════════════════════════════════════');
+
+        try {
+            // Reconstruct stack decision and architecture from DB
+            $stackDecision = [
+                'analysis' => ['project_type' => $project['project_type'] ?? 'fullstack'],
+                'stack_decision' => [
+                    'frontend' => $project['frontend'] ?? 'next',
+                    'backend' => $project['backend'] ?? 'node_express',
+                    'database' => $project['database'] ?? 'postgresql',
+                    'css_framework' => $project['css_framework'] ?? 'tailwind',
+                ],
+            ];
+            $architecture = @json_decode($project['arch_json'], true) ?: [];
+
+            $this->log('ok', 'Stack: ' . $stackDecision['stack_decision']['frontend'] . ' + ' . $stackDecision['stack_decision']['backend'] . ' + ' . $stackDecision['stack_decision']['database']);
+
+            // Brief context
+            $brief = @json_decode($project['brief'], true) ?: [];
+            $brief['title'] = $project['title'];
+            $brief['project_id'] = $project['id'];
+            $brief['folder'] = $project['folder'];
+
+            // Load existing files from disk
+            $buildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($project['folder']);
+            $existingFiles = $this->scanFiles($buildDir);
+
+            // Regenerate design system (not stored in DB)
+            $this->progress(65, 'Designer (cache)');
+            $this->log('ai', 'Regénération du design system...');
+            $designSystem = $this->runDesigner($brief, $stackDecision, $architecture);
+
+            // Regenerate backend result (needed for frontend context)
+            $this->progress(70, 'Backend (cache)');
+            $this->log('ai', 'Reconstitution du contexte backend...');
+            $backendResult = $this->runBackendBrief($architecture);
+
+            // ── ÉTAPE 6: QA — Skip si déjà fait ──────────────────────
+            $this->progress(75, 'QA Engineer : Inspection qualité...');
+            $this->log('test', 'Agent QA : Validation du code...');
+
+            $qaResult = $this->runQA($brief, $stackDecision, $existingFiles);
+
+            $score = $qaResult['overall_score'] ?? 0;
+            $this->log('test', "Score qualité : $score/100");
+            $this->log('test', "Problèmes : " . count($qaResult['issues'] ?? []) . ", Corrections : " . count($qaResult['fixes'] ?? []));
+
+            foreach (($qaResult['fixes'] ?? []) as $fix) {
+                if (!empty($fix['file']) && !empty($fix['content'])) {
+                    $this->writeFile($fix['file'], $fix['content']);
+                    $this->log('heal', "🔧 Correction appliquée : {$fix['file']}");
+                }
+            }
+
+            updateProject($this->db, $this->projectId, [
+                'qa_score' => $score,
+                'file_count' => count($existingFiles),
+            ]);
+
+            // ── ÉTAPE 7: DevOps ─────────────────────────────────────
+            $this->progress(90, 'DevOps : Préparation du déploiement...');
+            $this->log('ai', 'Agent DevOps : Configuration infrastructure...');
+            $devopsResult = $this->runDevOps($brief, $stackDecision, $architecture);
+
+            foreach (($devopsResult['files'] ?? []) as $f) $this->writeFile($f['filename'], $f['content']);
+            $this->log('ok', 'DevOps prêt : Docker + CI/CD générés');
+
+            // Finalisation
+            $this->generateReadme($architecture, $stackDecision, $score);
+            updateProject($this->db, $this->projectId, ['status' => 'done']);
+
+            $this->progress(100, '✅ Projet terminé !');
+            $this->log('ok', '═══════════════════════════════════════════════════');
+            $this->log('ok', "✅ REPRISE TERMINÉE — Score QA : $score/100");
+            $this->log('ok', "📁 Dossier : builds/" . basename($this->projectFolder));
+            $this->log('ok', "📦 Fichiers : " . count($existingFiles));
+            $this->log('ok', '═══════════════════════════════════════════════════');
+
+            return ['success' => true, 'project_id' => $this->projectId, 'files' => count($existingFiles), 'qa_score' => $score];
+
+        } catch (\Exception $e) {
+            $this->log('err', '❌ Reprise interrompue : ' . $e->getMessage());
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    private function scanFiles(string $dir): array {
+        $files = [];
+        if (!is_dir($dir)) return $files;
+        $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS));
+        foreach ($iterator as $file) {
+            if ($file->isFile()) {
+                $relPath = str_replace($dir . DIRECTORY_SEPARATOR, '', $file->getPathname());
+                $relPath = str_replace('\\', '/', $relPath);
+                $files[] = [
+                    'filename' => $relPath,
+                    'content' => file_get_contents($file->getPathname()),
+                    'language' => pathinfo($relPath, PATHINFO_EXTENSION),
+                    'size' => $file->getSize(),
+                ];
+            }
+        }
+        return $files;
+    }
+
+    private function runBackendBrief(array $arch): array {
+        // Return minimal backend result needed for frontend context
+        $files = [];
+        $endpoints = $arch['api_endpoints'] ?? [];
+        foreach ($endpoints as $ep) {
+            $files[] = ['filename' => ($ep['method'] ?? 'GET') . ' ' . ($ep['path'] ?? '/'), 'content' => ''];
+        }
+        return ['files' => $files, 'config_files' => []];
+    }
+
     // ─── Agent CTO ────────────────────────────────────────────────
 
     private function runCTO(array $brief): array {
