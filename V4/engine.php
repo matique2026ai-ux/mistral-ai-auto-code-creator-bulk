@@ -184,28 +184,32 @@ class PipelineEngine {
             $frontendResult = $this->runFrontend($brief, $stackDecision, $architecture, $designSystem, $backendResult);
             // files already written inside runFrontend
 
-            // ── ÉTAPE 6: QA — Validation du code ─────────────────────
-            $this->progress(75, 'QA Engineer : Inspection qualité complète...');
-            $this->log('test', 'Agent QA : Validation du code...');
+            // ── ÉTAPE 6: QA — Validation + Build + Fix Loop ────────
+            $this->progress(75, 'QA Engineer : Inspection + Build + Correction (max 3 itérations)...');
+            $this->log('test', 'Agent QA : Validation du code avec boucle de correction...');
 
             $allFiles = array_merge($backendFiles, $configFiles, $frontendResult['files'] ?? []);
-            $qaResult = $this->runQA($brief, $stackDecision, $allFiles);
+            $qaResult = $this->qaFixLoop($brief, $stackDecision, $allFiles);
 
             $score = $qaResult['overall_score'] ?? 0;
-            $this->log('test', "Score qualité : $score/100");
-            $this->log('test', "Problèmes : " . count($qaResult['issues'] ?? []) . ", Corrections : " . count($qaResult['fixes'] ?? []));
+            $buildSuccess = $qaResult['build_success'] ?? false;
+            $iterations = $qaResult['iterations'] ?? 1;
 
-            // Appliquer les corrections QA
-            foreach (($qaResult['fixes'] ?? []) as $fix) {
-                if (!empty($fix['file']) && !empty($fix['content'])) {
-                    $this->writeFile($fix['file'], $fix['content']);
-                    $this->log('heal', "🔧 Correction appliquée : {$fix['file']}");
+            $this->log('test', "Score qualité : $score/100 (itérations : $iterations)");
+            $this->log('test', "Problèmes : " . count($qaResult['issues'] ?? []) . ", Corrections : " . count($qaResult['fixes'] ?? []));
+            $this->log('test', "Build : " . ($buildSuccess ? '✅ RÉUSSI' : '❌ ÉCHEC'));
+
+            if (!empty($qaResult['build_errors'])) {
+                $this->log('warn', "⚠ Erreurs de build persistantes : " . count($qaResult['build_errors']));
+                foreach (array_slice($qaResult['build_errors'], 0, 10) as $be) {
+                    $this->log('warn', "  " . substr($be, 0, 200));
                 }
             }
 
             updateProject($this->db, $this->projectId, [
                 'qa_score' => $score,
                 'file_count' => count($allFiles),
+                'build_validated' => $buildSuccess ? 1 : 0,
             ]);
 
             // ── ÉTAPE 7: DevOps — Déploiement ────────────────────────
@@ -289,26 +293,31 @@ class PipelineEngine {
             $this->log('ai', 'Reconstitution du contexte backend...');
             $backendResult = $this->runBackendBrief($architecture);
 
-            // ── ÉTAPE 6: QA — Skip si déjà fait ──────────────────────
-            $this->progress(75, 'QA Engineer : Inspection qualité...');
-            $this->log('test', 'Agent QA : Validation du code...');
+            // ── ÉTAPE 6: QA — Validation + Build + Fix Loop ────────
+            $this->progress(75, 'QA Engineer : Inspection + Build + Correction (max 3 itérations)...');
+            $this->log('test', 'Agent QA : Validation du code avec boucle de correction...');
 
-            $qaResult = $this->runQA($brief, $stackDecision, $existingFiles);
+            $qaResult = $this->qaFixLoop($brief, $stackDecision, $existingFiles);
 
             $score = $qaResult['overall_score'] ?? 0;
-            $this->log('test', "Score qualité : $score/100");
-            $this->log('test', "Problèmes : " . count($qaResult['issues'] ?? []) . ", Corrections : " . count($qaResult['fixes'] ?? []));
+            $buildSuccess = $qaResult['build_success'] ?? false;
+            $iterations = $qaResult['iterations'] ?? 1;
 
-            foreach (($qaResult['fixes'] ?? []) as $fix) {
-                if (!empty($fix['file']) && !empty($fix['content'])) {
-                    $this->writeFile($fix['file'], $fix['content']);
-                    $this->log('heal', "🔧 Correction appliquée : {$fix['file']}");
+            $this->log('test', "Score qualité : $score/100 (itérations : $iterations)");
+            $this->log('test', "Problèmes : " . count($qaResult['issues'] ?? []) . ", Corrections : " . count($qaResult['fixes'] ?? []));
+            $this->log('test', "Build : " . ($buildSuccess ? '✅ RÉUSSI' : '❌ ÉCHEC'));
+
+            if (!empty($qaResult['build_errors'])) {
+                $this->log('warn', "⚠ Erreurs de build persistantes : " . count($qaResult['build_errors']));
+                foreach (array_slice($qaResult['build_errors'], 0, 10) as $be) {
+                    $this->log('warn', "  " . substr($be, 0, 200));
                 }
             }
 
             updateProject($this->db, $this->projectId, [
                 'qa_score' => $score,
                 'file_count' => count($existingFiles),
+                'build_validated' => $buildSuccess ? 1 : 0,
             ]);
 
             // ── ÉTAPE 7: DevOps ─────────────────────────────────────
@@ -569,6 +578,360 @@ class PipelineEngine {
             ])],
         ];
         return $this->callWithRetry($messages, 16000, true, 'qa');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  VALIDATION DE BUILD — stack-agnostique
+    // ═══════════════════════════════════════════════════════════════════
+
+    private function detectBuildCommands(array $stackDecision): array {
+        $front = $stackDecision['stack_decision']['frontend'] ?? '';
+        $back  = $stackDecision['stack_decision']['backend'] ?? '';
+        $type  = $stackDecision['analysis']['project_type'] ?? 'fullstack';
+        $buildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($this->projectFolder);
+        $cmds = [];
+
+        // Node.js / JS ecosystem
+        if (in_array($front, ['next','react','vue','nuxt','svelte','angular','astro','remix','react_native','html_css_js'])
+            || in_array($back, ['node_express','supabase','firebase'])) {
+            $pkg = "$buildDir/package.json";
+            if (file_exists($pkg)) {
+                $cmds[] = ['name' => 'npm_install', 'cmd' => 'npm install 2>&1', 'cwd' => $buildDir, 'optional' => false];
+                $cmds[] = ['name' => 'npm_build',   'cmd' => 'npm run build 2>&1',  'cwd' => $buildDir, 'optional' => false];
+                // Try tsc check if typescript is present
+                $cmds[] = ['name' => 'tsc_check',   'cmd' => 'npx tsc --noEmit 2>&1', 'cwd' => $buildDir, 'optional' => true];
+                // Try lint
+                $cmds[] = ['name' => 'eslint',      'cmd' => 'npx eslint . --max-warnings 50 2>&1', 'cwd' => $buildDir, 'optional' => true];
+            }
+        }
+
+        // Python
+        if (in_array($back, ['fastapi_python','django_python'])) {
+            $req = "$buildDir/requirements.txt";
+            if (!file_exists($req)) $req = "$buildDir/backend/requirements.txt";
+            if (file_exists($req)) {
+                $cmds[] = ['name' => 'pip_install', 'cmd' => 'pip install -r "' . basename(dirname($req)) . '/requirements.txt" 2>&1', 'cwd' => $buildDir, 'optional' => false];
+            }
+            $cmds[] = ['name' => 'py_syntax', 'cmd' => 'python -m compileall . 2>&1', 'cwd' => $buildDir, 'optional' => true];
+        }
+
+        // Go
+        if ($back === 'go_gin') {
+            $cmds[] = ['name' => 'go_build', 'cmd' => 'go build ./... 2>&1', 'cwd' => $buildDir, 'optional' => false];
+        }
+
+        // Rust
+        if ($back === 'rust_actix') {
+            $cmds[] = ['name' => 'cargo_check', 'cmd' => 'cargo check 2>&1', 'cwd' => $buildDir, 'optional' => false];
+        }
+
+        // Flutter
+        if ($front === 'flutter') {
+            $cmds[] = ['name' => 'flutter_analyze', 'cmd' => 'flutter analyze 2>&1', 'cwd' => $buildDir, 'optional' => false];
+        }
+
+        // Android / Kotlin
+        if ($front === 'kotlin') {
+            $gradle = "$buildDir/gradlew";
+            $gradleBat = "$buildDir/gradlew.bat";
+            $gradleCmd = is_file($gradleBat) ? 'gradlew.bat' : (is_file($gradle) ? './gradlew' : 'gradle');
+            $cmds[] = ['name' => 'gradle_build', 'cmd' => "$gradleCmd assembleDebug 2>&1", 'cwd' => $buildDir, 'optional' => false];
+        }
+
+        // Swift
+        if ($front === 'swiftui') {
+            $cmds[] = ['name' => 'swift_build', 'cmd' => 'swift build 2>&1', 'cwd' => $buildDir, 'optional' => false];
+        }
+
+        return $cmds;
+    }
+
+    private function runBuildValidation(array $stackDecision): array {
+        $errors = [];
+        $commands = $this->detectBuildCommands($stackDecision);
+
+        if (empty($commands)) {
+            $this->log('ok', 'Build: aucun système détecté, validation ignorée');
+            return ['success' => true, 'errors' => []];
+        }
+
+        $this->log('sys', '═══ Validation Build (' . count($commands) . ' commandes) ═══');
+
+        foreach ($commands as $cmd) {
+            $this->log('sys', "→ {$cmd['name']}...");
+            $output = [];
+            $code = -1;
+            $escaped = '"' . str_replace('"', '\"', $cmd['cmd']) . '"';
+            if (PHP_OS_FAMILY === 'Windows') {
+                $fullCmd = "cd /d \"{$cmd['cwd']}\" && $escaped";
+            } else {
+                $fullCmd = "cd \"{$cmd['cwd']}\" && $escaped";
+            }
+            exec($fullCmd, $output, $code);
+            $outStr = implode("\n", array_slice($output, -20));
+
+            if ($code !== 0) {
+                if ($cmd['optional']) {
+                    $this->log('warn', "  ⚠ {$cmd['name']} (optionnel) a échoué: code $code");
+                    $errors[] = ['command' => $cmd['name'], 'severity' => 'warning', 'output' => $outStr];
+                } else {
+                    $this->log('err', "  ✗ {$cmd['name']} a échoué (code $code)");
+                    $this->log('err', "  Sortie: " . substr($outStr, 0, 500));
+                    $errors[] = ['command' => $cmd['name'], 'severity' => 'error', 'output' => $outStr];
+                }
+            } else {
+                $this->log('ok', "  ✓ {$cmd['name']} OK");
+            }
+        }
+
+        return [
+            'success' => empty(array_filter($errors, fn($e) => $e['severity'] === 'error')),
+            'errors' => $errors,
+        ];
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  VALIDATION DES IMPORTS — vérifie que les imports locaux existent
+    // ═══════════════════════════════════════════════════════════════════
+
+    private function validateFileImports(array $allFiles): array {
+        $issues = [];
+        $localExports = []; // resolvedPath => [named exports, default export]
+
+        // Collect all exports
+        foreach ($allFiles as $f) {
+            $content = $f['content'] ?? '';
+            $filename = $f['filename'] ?? '';
+            $named = [];
+            $default = null;
+
+            // export const|function|let|var|class Name
+            preg_match_all('/export\s+(?:const|function|let|var|class|async\s+function)\s+(\w+)/', $content, $m);
+            $named = $m[1] ?? [];
+
+            // export default Name
+            if (preg_match('/export\s+default\s+(?:function\s+|class\s+)?(\w+)/', $content, $dm)) {
+                $default = $dm[1];
+            }
+            // export { Name1, Name2 }
+            preg_match_all('/export\s+\{\s*([^}]+)\s*\}/', $content, $em);
+            foreach ($em[1] ?? [] as $block) {
+                foreach (explode(',', $block) as $part) {
+                    $part = trim($part);
+                    $part = preg_replace('/\s+as\s+\w+/', '', $part);
+                    if ($part) $named[] = $part;
+                }
+            }
+
+            $localExports[$filename] = ['named' => $named, 'default' => $default];
+        }
+
+        // Check all imports
+        $buildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($this->projectFolder) . DIRECTORY_SEPARATOR;
+        foreach ($allFiles as $f) {
+            $content = $f['content'] ?? '';
+            $filename = $f['filename'] ?? '';
+
+            // Find all import ... from 'relative/path'
+            preg_match_all('/import\s+(?:\{\s*([^}]+)\s*\}|(\w+)(?:\s*,\s*\{\s*([^}]+)\s*\})?)\s+from\s+[\'"](\.\.?\/[^\'"]+)[\'"]/', $content, $imports, PREG_SET_ORDER);
+
+            foreach ($imports as $imp) {
+                $importPath = $imp[4];
+                $resolved = $this->resolveImportPath($filename, $importPath, $buildDir);
+                if (!$resolved) {
+                    $issues[] = [
+                        'file' => $filename,
+                        'import' => $importPath,
+                        'issue' => 'Fichier introuvable',
+                        'severity' => 'error',
+                    ];
+                    continue;
+                }
+
+                $namedImport = trim($imp[1] ?? '');
+                $defaultImport = trim($imp[2] ?? '');
+                $namedFromDefault = trim($imp[3] ?? '');
+
+                $targetExports = $localExports[$resolved] ?? ['named' => [], 'default' => null];
+
+                // Check default import
+                if ($defaultImport && !$targetExports['default'] && empty($targetExports['named'])) {
+                    $issues[] = [
+                        'file' => $filename,
+                        'import' => $importPath,
+                        'issue' => "Import par défaut '{$defaultImport}' mais le fichier n'a pas d'export par défaut",
+                        'severity' => 'warning',
+                    ];
+                }
+
+                // Check named imports
+                $names = [];
+                if ($namedImport) {
+                    $names = array_map('trim', explode(',', $namedImport));
+                }
+                if ($namedFromDefault) {
+                    $names = array_merge($names, array_map('trim', explode(',', $namedFromDefault)));
+                }
+                foreach ($names as $name) {
+                    $name = preg_replace('/\s+as\s+\w+/', '', $name); // handle "X as Y"
+                    if ($name && !in_array($name, $targetExports['named']) && !$targetExports['default']) {
+                        $issues[] = [
+                            'file' => $filename,
+                            'import' => $importPath,
+                            'issue' => "'{$name}' n'est pas exporté par le fichier cible (exports: " . implode(', ', $targetExports['named']) . ')',
+                            'severity' => 'error',
+                        ];
+                    }
+                }
+            }
+        }
+
+        return $issues;
+    }
+
+    private function resolveImportPath(string $sourceFile, string $importPath, string $buildDir): ?string {
+        $sourceDir = dirname($sourceFile);
+        // Normalize path separators
+        $importPath = str_replace('\\', '/', $importPath);
+        $sourceDir = str_replace('\\', '/', $sourceDir);
+
+        $parts = explode('/', $sourceDir);
+        $importParts = explode('/', $importPath);
+        foreach ($importParts as $part) {
+            if ($part === '.') continue;
+            if ($part === '..') {
+                if (count($parts) > 0) array_pop($parts);
+                continue;
+            }
+            $parts[] = $part;
+        }
+        $resolved = implode('/', $parts);
+
+        // Check common extensions
+        $extensions = ['.js', '.jsx', '.ts', '.tsx', '.vue', '.svelte', '.astro', '.dart', '.kt', '.swift', '.py', '.go', '.rs', '.php'];
+        $candidates = [$resolved];
+        foreach ($extensions as $ext) {
+            $candidates[] = $resolved . $ext;
+            $candidates[] = $resolved . DIRECTORY_SEPARATOR . 'index' . $ext;
+        }
+
+        // Also check the localExports keys directly
+        foreach ($candidates as $c) {
+            $c = ltrim($c, '/');
+            if (isset($this->localExportCache) || true) {
+                // Check against known files
+                foreach ($this->generatedFiles as $gf) {
+                    $gf = str_replace('\\', '/', $gf);
+                    if ($gf === $c) return $c;
+                }
+            }
+        }
+
+        // Check actual filesystem
+        foreach ($candidates as $c) {
+            $fullPath = $buildDir . $c;
+            if (file_exists($fullPath)) return $c;
+        }
+
+        return null;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  BOUCLE QA-FIX — max 3 itérations avec validation de build
+    // ═══════════════════════════════════════════════════════════════════
+
+    private function qaFixLoop(array $brief, array $stackDecision, array $allFiles, int $maxIterations = 3): array {
+        $currentFiles = $allFiles;
+        $allBuildErrors = [];
+        $finalScore = 0;
+        $finalIssues = [];
+        $finalFixes = [];
+
+        for ($iteration = 0; $iteration < $maxIterations; $iteration++) {
+            $this->log('sys', "═══ QA-Fix Itération " . ($iteration + 1) . "/{$maxIterations} ═══");
+
+            // Step 1: Run QA
+            $qaResult = $this->runQA($brief, $stackDecision, $currentFiles);
+            $score = $qaResult['overall_score'] ?? 0;
+            $issues = $qaResult['issues'] ?? [];
+            $fixes = $qaResult['fixes'] ?? [];
+            $finalScore = $score;
+            $finalIssues = $issues;
+
+            $this->log('test', "Score qualité : $score/100");
+            $this->log('test', "Problèmes : " . count($issues) . ", Corrections : " . count($fixes));
+
+            // Apply fixes
+            foreach ($fixes as $fix) {
+                if (!empty($fix['file']) && !empty($fix['content'])) {
+                    $this->writeFile($fix['file'], $fix['content']);
+                    $this->log('heal', "🔧 Correction appliquée : {$fix['file']}");
+                    // Update in-memory files
+                    foreach ($currentFiles as &$cf) {
+                        if (($cf['filename'] ?? '') === $fix['file']) {
+                            $cf['content'] = $fix['content'];
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Step 2: Re-scan files from disk (in case writeFile changed things)
+            $buildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($this->projectFolder);
+            $currentFiles = $this->scanFiles($buildDir);
+
+            // Step 3: Validate imports
+            $importErrors = $this->validateFileImports($currentFiles);
+            if (!empty($importErrors)) {
+                $this->log('warn', "⚠ Problèmes d'imports détectés : " . count($importErrors));
+                foreach ($importErrors as $ie) {
+                    $this->log('warn', "  {$ie['file']} → {$ie['import']}: {$ie['issue']}");
+                }
+            }
+
+            // Step 4: Run build validation
+            $buildResult = $this->runBuildValidation($stackDecision);
+            $buildErrors = $buildResult['errors'] ?? [];
+
+            if ($buildResult['success'] && empty($importErrors)) {
+                $this->log('ok', '✅ Build validé avec succès !');
+                $finalFixes = $fixes;
+                break;
+            }
+
+            // Collect errors for next iteration
+            $errorSummary = [];
+            foreach ($buildErrors as $be) {
+                $errorSummary[] = "[{$be['command']}] {$be['output']}";
+            }
+            foreach ($importErrors as $ie) {
+                $errorSummary[] = "[import] {$ie['file']}: {$ie['issue']}";
+            }
+            $allBuildErrors = $errorSummary;
+
+            if ($iteration < $maxIterations - 1) {
+                // Feed errors back into QA context for the next iteration
+                $this->log('sys', "🔄 Réinjection des erreurs dans le QA...");
+                // Create a temporary fix file that QA can see next time
+                $errorFile = '_build_errors.json';
+                $this->writeFile($errorFile, json_encode(['build_errors' => $allBuildErrors, 'iteration' => $iteration + 1], JSON_PRETTY_PRINT));
+                // Re-scan to include the error file
+                $currentFiles = $this->scanFiles($buildDir);
+            }
+        }
+
+        // Clean up error file
+        $errorFilePath = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($this->projectFolder) . DIRECTORY_SEPARATOR . '_build_errors.json';
+        if (file_exists($errorFilePath)) unlink($errorFilePath);
+
+        return [
+            'overall_score' => $finalScore,
+            'issues' => $finalIssues,
+            'fixes' => $finalFixes,
+            'build_errors' => $allBuildErrors,
+            'iterations' => $iteration + 1,
+            'build_success' => empty(array_filter($buildResult['errors'] ?? [], fn($e) => $e['severity'] === 'error')),
+        ];
     }
 
     // ─── Agent DevOps ─────────────────────────────────────────────

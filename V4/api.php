@@ -132,7 +132,7 @@ if ($action === 'update_project') {
 
 if ($action === 'list_projects') {
     $limit = min((int)(p('limit') ?: 30), 100);
-    $projects = $db->query("SELECT id, title, folder, project_type, frontend, backend, database, css_framework, status, qa_score, file_count, created_at FROM projects ORDER BY id DESC LIMIT $limit")->fetchAll();
+    $projects = $db->query("SELECT id, title, folder, project_type, frontend, backend, database, css_framework, status, qa_score, file_count, build_validated, created_at FROM projects ORDER BY id DESC LIMIT $limit")->fetchAll();
     respond(['projects' => $projects]);
 }
 

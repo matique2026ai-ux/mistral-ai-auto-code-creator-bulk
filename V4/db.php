@@ -78,6 +78,13 @@ function migrateDB(PDO $db): void {
         status     TEXT DEFAULT 'pending',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )");
+
+    // Migration v4.1: add build_validated column
+    try {
+        $db->exec("ALTER TABLE projects ADD COLUMN build_validated INTEGER DEFAULT 0");
+    } catch (\Exception $e) {
+        // Column already exists
+    }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
