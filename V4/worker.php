@@ -98,10 +98,12 @@ function launchWorkerChild(int $projectId, int $jobId, string $jobName): ?int {
     $cmd = "\"$phpBin\" \"$scriptPath\" $projectId $jobId $jobName";
 
     if (PHP_OS_FAMILY === 'Windows') {
-        $cmd = "start /B \"\" $cmd";
-        $proc = pclose(popen($cmd, 'r'));
-        // On Windows, return a synthetic PID (unix timestamp)
-        return (int)(microtime(true) * 1000000);
+        // Run synchronously on Windows (start /B is unreliable)
+        $engine = new PipelineEngine();
+        $queue = new JobQueue();
+        $job = $queue->getJobById($jobId);
+        if ($job) executeJobSync($engine, $projectId, $job, $queue);
+        return null;
     } else {
         exec("nohup $cmd > /dev/null 2>&1 & echo $!", $out);
         return (int)($out[0] ?? 0);

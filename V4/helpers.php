@@ -2,12 +2,12 @@
 /**
  * Helpers partagés entre API et tests
  */
-function p(string $key, $default = '') { global $body; return $body[$key] ?? $_POST[$key] ?? $_GET[$key] ?? $default; }
-function pInt(string $key, int $default = 0): int { return (int)p($key, (string)$default); }
-function pSafe(string $key, string $default = ''): string { return strip_tags(trim(p($key, $default))); }
-function respond(array $data): never { echo json_encode($data); exit; }
-function err(string $msg): never { respond(['error' => $msg]); }
-function ok(array $extra = []): never { respond(array_merge(['success' => true], $extra)); }
+if (!function_exists('p')) { function p(string $key, $default = '') { global $body; return $body[$key] ?? $_POST[$key] ?? $_GET[$key] ?? $default; } }
+if (!function_exists('pInt')) { function pInt(string $key, int $default = 0): int { return (int)p($key, (string)$default); } }
+if (!function_exists('pSafe')) { function pSafe(string $key, string $default = ''): string { return strip_tags(trim(p($key, $default))); } }
+if (!function_exists('respond')) { function respond(array $data): never { echo json_encode($data); exit; } }
+if (!function_exists('err')) { function err(string $msg): never { respond(['error' => $msg]); } }
+if (!function_exists('ok')) { function ok(array $extra = []): never { respond(array_merge(['success' => true], $extra)); } }
 
 function validateAllowedKeys(array $data, array $allowed): array {
     $clean = [];
@@ -63,7 +63,7 @@ function slugify(string $text, int $maxLen = 40): string {
     return substr($text, 0, $maxLen) ?: 'projet';
 }
 
-function _rmdir_recursive(string $dir): void {
+if (!function_exists('_rmdir_recursive')) { function _rmdir_recursive(string $dir): void {
     if (!is_dir($dir)) return;
     foreach (new RecursiveIteratorIterator(
         new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
@@ -72,4 +72,36 @@ function _rmdir_recursive(string $dir): void {
         $item->isDir() ? rmdir($item->getRealPath()) : unlink($item->getRealPath());
     }
     rmdir($dir);
+} }
+
+function webSearch(string $query, int $maxResults = 5): array {
+    $results = [];
+    $ch = curl_init('https://api.duckduckgo.com/?q=' . urlencode($query) . '&format=json&no_html=1&skip_disambig=1');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 15,
+        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+        CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    ]);
+    $resp = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($code === 200) {
+        $data = json_decode($resp, true);
+        if (!empty($data['AbstractText'])) {
+            $results[] = ['title' => $data['Heading'] ?? '', 'snippet' => $data['AbstractText'], 'source' => $data['AbstractSource'] ?? 'DuckDuckGo'];
+        }
+        if (!empty($data['RelatedTopics'])) {
+            foreach (array_slice($data['RelatedTopics'], 0, $maxResults) as $topic) {
+                if (isset($topic['Text'])) {
+                    $results[] = ['title' => $topic['FirstURL'] ?? '', 'snippet' => $topic['Text'], 'source' => 'DuckDuckGo'];
+                }
+            }
+        }
+    }
+
+    return $results;
 }

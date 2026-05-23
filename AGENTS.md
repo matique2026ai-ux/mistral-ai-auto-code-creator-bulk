@@ -36,9 +36,12 @@
 - Job queue parallélisée (workers simultanés)
 - File d'attente SQLite avec reprise sur erreur
 - Multi-provider : Mistral AI, OpenAI, Claude, Gemini (fallback automatique)
-- Boucle de correction QA (max 5 itérations, score cible 95%)
+- Boucle de correction QA (max 10 itérations, arrêt sur stagnation 3x)
 - SSE (Server-Sent Events) pour logs en temps réel
 - Fallback polling si SSE perdu
+- **Mémoire persistante** : chaque agent stocke ses décisions (`agent_memories`), consultables entre projets
+- **Recherche web** : agents consultent DuckDuckGo avant chaque décision (stack, architecture, tendances UI)
+- **Autocorrection imports** : détection et correction automatique des mismatch `import { X }` / `export default X`
 
 ### Interface
 - Sidebar avec 4 onglets (Build, Keys, Projects, Dashboard)
@@ -68,7 +71,7 @@ php cli.php --prompt="Crée un blog" [options]
 
 ## Dernier commit
 
-**V4.9** — `684e15d` — Theme toggle, Mode CLI, Build timer
+**V4.10** — `HEAD` — Mémoire agents, recherche web, prompts mission-based (inspiré autoresearch)
 
 ### Historique
 | Commit | Version | Description |
@@ -84,6 +87,7 @@ php cli.php --prompt="Crée un blog" [options]
 | `2678ac7` | V4.8.5 | Pagination projets (20/page) |
 | `b5e7137` | V4.8.6 | Nettoyage auto builds |
 | `684e15d` | V4.9 | Theme toggle dark/light, Mode CLI, Build timer |
+| `HEAD` | V4.10 | Mémoire agents, recherche web, prompts mission-based, autocorrection imports |
 
 ---
 

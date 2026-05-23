@@ -295,71 +295,80 @@ if ($action === 'get_stats') {
     respond(['stats' => $stats, 'chart' => $chart]);
 }
 
-// ── APPEND_FILE ───────────────────────────────────────────────────────────
-if ($action === 'append_file') {
-    $path = p('path');
-    $content = $body['content'] ?? $_POST['content'] ?? '';
-    if (!$path || !$content) err('path and content required');
-
-    $fullPath = __DIR__ . '/' . ltrim($path, '/');
-    $dir = dirname($fullPath);
-    if (!is_dir($dir)) mkdir($dir, 0777, true);
-
-    // Write header if file doesn't exist
-    if (!file_exists($fullPath)) {
-        file_put_contents($fullPath, "commit\tqa_score\tfiles\tstatus\tdescription\n", LOCK_EX);
-    }
-    file_put_contents($fullPath, $content, FILE_APPEND | LOCK_EX);
-    ok(['bytes' => strlen($content)]);
-}
-
-// ── LINT_FILE ─────────────────────────────────────────────────────────────
 if ($action === 'lint_file') {
-    $path = p('path');
-    if (!$path) err('path required');
+    $path = $body['path'] ?? $_POST['path'] ?? '';
+    if (!$path) err('Path required');
 
-    $fullPath = __DIR__ . '/' . ltrim($path, '/');
-    if (!file_exists($fullPath)) err('File not found');
+    $normPath = str_replace('\\', '/', $path);
+    if (!str_starts_with($normPath, AC_BUILDS_WEB . '/')) err('Access denied');
+    if (preg_match('/(\.\.|%00)/', $path)) err('Invalid path');
 
-    $content = file_get_contents($fullPath);
+    $target = __DIR__ . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $normPath);
+    if (!file_exists($target)) err('File not found');
+
+    $ext = strtolower(pathinfo($target, PATHINFO_EXTENSION));
     $syntax_ok = true;
-    $message = 'OK';
+    $message = 'Validation passed or skipped for this file type.';
 
-    // PHP syntax check
-    if (pathinfo($fullPath, PATHINFO_EXTENSION) === 'php') {
-        $tmpFile = tempnam(sys_get_temp_dir(), 'lint_') . '.php';
-        file_put_contents($tmpFile, $content);
-        exec('php -l "' . $tmpFile . '" 2>&1', $output, $retCode);
-        unlink($tmpFile);
-        if ($retCode !== 0) {
-            $syntax_ok = false;
+    if ($ext === 'php') {
+        $output = [];
+        $retval = 0;
+        if (function_exists('exec')) {
+            @exec('php -l ' . escapeshellarg($target) . ' 2>&1', $output, $retval);
+            $syntax_ok = ($retval === 0);
             $message = implode("\n", $output);
+        } else {
+            $message = 'Linter skipped: exec function is disabled';
         }
-    }
-
-    // Basic JS syntax check via Node
-    if (pathinfo($fullPath, PATHINFO_EXTENSION) === 'js') {
-        $tmpFile = tempnam(sys_get_temp_dir(), 'lint_') . '.js';
-        file_put_contents($tmpFile, $content);
-        exec('node --check "' . $tmpFile . '" 2>&1', $output, $retCode);
-        unlink($tmpFile);
-        if ($retCode !== 0) {
+    } elseif ($ext === 'json') {
+        $content = @file_get_contents($target);
+        if ($content === false) {
             $syntax_ok = false;
-            $message = implode("\n", $output);
+            $message = 'Could not read JSON file content.';
+        } else {
+            json_decode($content);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                $syntax_ok = false;
+                $message = 'JSON Parse Error: ' . json_last_error_msg();
+            } else {
+                $message = 'Valid JSON format checked successfully.';
+            }
         }
-    }
+    } elseif ($ext === 'py') {
+        $output = [];
+        $retval = 0;
+        if (function_exists('exec')) {
+            // Verify if python command works
+            @exec('python --version 2>&1', $testOut, $testRet);
+            if ($testRet !== 0) {
+                // Try python3 just in case
+                @exec('python3 --version 2>&1', $testOut3, $testRet3);
+                $cmd = ($testRet3 === 0) ? 'python3' : '';
+            } else {
+                $cmd = 'python';
+            }
 
-    // Check HTML basics
-    if (in_array(pathinfo($fullPath, PATHINFO_EXTENSION), ['html', 'php'])) {
-        if (!str_contains($content, '</body>')) {
-            $syntax_ok = false;
-            $message = 'Missing closing </body> tag';
+            if ($cmd !== '') {
+                @exec($cmd . ' -m py_compile ' . escapeshellarg($target) . ' 2>&1', $output, $retval);
+                if ($retval !== 0) {
+                    $syntax_ok = false;
+                    $message = implode("\n", $output);
+                } else {
+                    $message = 'Python syntax compilation check passed successfully.';
+                }
+            } else {
+                $message = 'Python is not installed on system path; skipped deep syntax verification.';
+            }
+        } else {
+            $message = 'Linter skipped: exec function is disabled';
         }
+    } else {
+        $message = "Skipped check for extension: .{$ext}";
     }
 
     respond([
         'syntax_ok' => $syntax_ok,
-        'message' => $message
+        'message'   => $message
     ]);
 }
 

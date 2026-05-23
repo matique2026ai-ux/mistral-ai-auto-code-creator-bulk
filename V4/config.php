@@ -51,8 +51,8 @@ define('AC4_AGENT_MODEL_MAP', json_encode([
     'cto'       => ['provider' => 'mistral',    'model' => 'devstral-2512',     'max_tokens' => 16000],
     'architect' => ['provider' => 'mistral',    'model' => 'devstral-2512',     'max_tokens' => 16000],
     'designer'  => ['provider' => 'mistral',    'model' => 'devstral-2512',     'max_tokens' => 16000],
-    'backend'   => ['provider' => 'mistral',    'model' => 'codestral-2505',    'max_tokens' => 32000],
-    'frontend'  => ['provider' => 'mistral',    'model' => 'codestral-2505',    'max_tokens' => 32000],
+    'backend'   => ['provider' => 'mistral',    'model' => 'codestral-latest',    'max_tokens' => 32000],
+    'frontend'  => ['provider' => 'mistral',    'model' => 'codestral-latest',    'max_tokens' => 32000],
     'qa'        => ['provider' => 'mistral',    'model' => 'devstral-2512',     'max_tokens' => 16000],
     'devops'    => ['provider' => 'mistral',    'model' => 'devstral-2512',     'max_tokens' => 16000],
 ]));

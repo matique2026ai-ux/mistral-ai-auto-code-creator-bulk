@@ -124,7 +124,8 @@ class JobQueue {
 
         if (!$j) return;
 
-        if ($j['retry_count'] < $j['max_retries']) {
+        $maxRetries = $j['max_retries'] ?? 2;
+        if ($j['retry_count'] < $maxRetries) {
             $this->db->prepare(
                 "UPDATE jobs SET status = 'pending', retry_count = retry_count + 1, worker_id = NULL WHERE id = ?"
             )->execute([$jobId]);
@@ -133,6 +134,13 @@ class JobQueue {
                 "UPDATE jobs SET status = 'failed', error_message = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?"
             )->execute([$error, $jobId]);
         }
+    }
+
+    public function getJobById(int $jobId): ?array {
+        $stmt = $this->db->prepare("SELECT * FROM jobs WHERE id = ?");
+        $stmt->execute([$jobId]);
+        $r = $stmt->fetch();
+        return $r ?: null;
     }
 
     public function getFailedJobs(int $projectId): array {

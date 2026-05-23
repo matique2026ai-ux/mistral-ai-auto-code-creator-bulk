@@ -23,6 +23,7 @@
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/helpers.php';
 
 // ─── Parse arguments ──────────────────────────────────────────────────
 $longopts = [
@@ -79,30 +80,34 @@ echo "   Dossier : $folder\n";
 updateProject($db, $id, ['status' => 'building']);
 
 require_once __DIR__ . '/engine.php';
-require_once __DIR__ . '/queue.php';
 
-$queue = new JobQueue();
-$jobs = $queue->enqueueProject($id);
-echo "🚀 Build démarré — " . count($jobs) . " jobs en file\n";
+// Run pipeline synchronously (no queue — avoids SQLite lock issues on Windows)
+echo "🚀 Build démarré...\n";
+$engine = new PipelineEngine();
+try {
+    $engine->runJob($id, 'cto');
+    echo "  ✓ CTO\n";
+    $engine->runJob($id, 'architect');
+    echo "  ✓ Architecte\n";
+    $engine->runJob($id, 'designer');
+    echo "  ✓ Designer\n";
+    $engine->runJob($id, 'backend');
+    echo "  ✓ Backend\n";
+    $engine->runJob($id, 'frontend');
+    echo "  ✓ Frontend\n";
+    $engine->runJob($id, 'qa');
+    echo "  ✓ QA\n";
+    $engine->runJob($id, 'devops');
+    echo "  ✓ DevOps\n";
 
-require_once __DIR__ . '/worker.php';
-$workerId = 'cli_' . uniqid();
-runWorkerLoop($id, $queue, $workerId, 1);
-
-// ─── Check result ─────────────────────────────────────────────────────
-$failed = $queue->getFailedJobs($id);
-$stmt = $db->prepare("SELECT status, qa_score FROM projects WHERE id = ?"); $stmt->execute([$id]);
-$proj = $stmt->fetch();
-
-if (empty($failed) && $proj && $proj['status'] === 'done') {
+    updateProject($db, $id, ['status' => 'done']);
+    $stmt = $db->prepare("SELECT qa_score FROM projects WHERE id = ?"); $stmt->execute([$id]);
+    $proj = $stmt->fetch();
     echo "\n✅ Build #$id terminé ! Score QA : " . ($proj['qa_score'] ?? 'N/A') . "/100\n";
     echo "📁 builds/$slug/index.html\n";
     exit(0);
-} else {
-    echo "\n❌ Build #$id échoué\n";
-    $errJobs = $queue->getFailedJobs($id);
-    foreach ($errJobs as $ej) {
-        echo "   - {$ej['job_name']}: {$ej['error_message']}\n";
-    }
+} catch (\Throwable $e) {
+    updateProject($db, $id, ['status' => 'failed']);
+    echo "\n❌ Build #$id échoué : " . $e->getMessage() . "\n";
     exit(1);
 }
