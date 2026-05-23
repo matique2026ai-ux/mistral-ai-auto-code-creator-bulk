@@ -1,0 +1,20 @@
+AutoCoder V4 — Générateur de code autonome multi-agents
+
+Un logiciel web PHP qui génère automatiquement des applications complètes (web, mobile, API) via une pipeline de 7 agents IA spécialisés.
+
+Le logiciel doit :
+1. Recevoir une description en langage naturel (Master Prompt) de l'application à créer
+2. Laisser un agent CTO choisir la meilleure stack technique (frontend, backend, BDD, CSS)
+3. Un architecte conçoit l'architecture (pages, endpoints, schéma BDD, composants)
+4. Un designer crée un design system complet (couleurs, typo, espacements, animations)
+5. Un développeur backend génère toute l'API (Node/Python/Go/Rust selon stack choisie)
+6. Un développeur frontend génère chaque fichier un par un (React/Next/Vue/Flutter/Kotlin selon stack)
+7. Un QA engineer valide le code, exécute npm install + npm run build, vérifie les imports
+8. Un DevOps prépare Docker, CI/CD, Nginx
+
+Stack actuelle : PHP 8.3, SQLite, Vanilla CSS, Mistral AI API (devstral-2512)
+Interface : UI bilingue fr/ar avec terminal live, preview, barre de progression
+Base de données : SQLite avec tables projects, api_keys, token_usage, build_logs, generated_files
+Pipeline : boucle de correction QA-Fix (max 3 itérations avec build validation réelle)
+
+Le problème actuel : les agents génèrent du code qui ne compile pas. Besoin d'une version stable et fiable.

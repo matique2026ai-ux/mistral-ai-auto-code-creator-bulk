@@ -71,4 +71,8 @@ V3/builds/
 V3.zip
 *.zip
 
+# V4
+V4/autocoder_v4.sqlite
+V4/builds/
+
 ```
