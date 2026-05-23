@@ -108,6 +108,8 @@ async function loadProjects(q, page) {
   const offset = projectsPage * PROJECTS_PER_PAGE;
   const params = { limit: PROJECTS_PER_PAGE, offset };
   if (q) params.q = q;
+  const sortEl = document.getElementById('projectSort');
+  if (sortEl) params.sort = sortEl.value;
   const data = await api('list_projects', params);
   const projects = data.projects || [];
   const total = data.total || 0;
@@ -534,4 +536,15 @@ document.addEventListener('DOMContentLoaded', function() {
   loadProjects();
   loadStats();
   if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+
+  // Ctrl+Enter pour lancer le build
+  document.getElementById('masterPrompt').addEventListener('keydown', function(e) {
+    if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); launchBuild(); }
+  });
+
+  // Auto-refresh dashboard toutes les 30s
+  setInterval(function() {
+    const dash = document.getElementById('panelDashboard');
+    if (dash && dash.classList.contains('active')) loadDashboard();
+  }, 30000);
 });

@@ -214,14 +214,24 @@ if ($action === 'list_projects') {
     $limit = min((int)(p('limit') ?: 20), 100);
     $offset = max((int)(p('offset') ?: 0), 0);
     $q = trim(p('q', ''));
+    $sort = p('sort', 'date_desc');
+    $orderMap = [
+        'date_desc' => 'id DESC',
+        'date_asc' => 'id ASC',
+        'score_desc' => 'qa_score DESC',
+        'score_asc' => 'qa_score ASC',
+        'title' => 'title ASC',
+        'status' => "CASE status WHEN 'building' THEN 0 WHEN 'done' THEN 1 WHEN 'failed' THEN 2 ELSE 3 END",
+    ];
+    $order = $orderMap[$sort] ?? 'id DESC';
     if ($q !== '') {
         $like = '%' . $q . '%';
         $total = $db->prepare("SELECT COUNT(*) FROM projects WHERE title LIKE ? OR frontend LIKE ? OR backend LIKE ? OR status LIKE ?"); $total->execute([$like, $like, $like, $like]);
-        $projects = $db->prepare("SELECT id, title, folder, project_type, frontend, backend, database, css_framework, status, qa_score, file_count, build_validated, created_at FROM projects WHERE title LIKE ? OR frontend LIKE ? OR backend LIKE ? OR status LIKE ? ORDER BY id DESC LIMIT ? OFFSET ?");
+        $projects = $db->prepare("SELECT id, title, folder, project_type, frontend, backend, database, css_framework, status, qa_score, file_count, build_validated, created_at FROM projects WHERE title LIKE ? OR frontend LIKE ? OR backend LIKE ? OR status LIKE ? ORDER BY $order LIMIT ? OFFSET ?");
         $projects->execute([$like, $like, $like, $like, $limit, $offset]);
     } else {
         $total = $db->query("SELECT COUNT(*) FROM projects");
-        $projects = $db->prepare("SELECT id, title, folder, project_type, frontend, backend, database, css_framework, status, qa_score, file_count, build_validated, created_at FROM projects ORDER BY id DESC LIMIT ? OFFSET ?");
+        $projects = $db->prepare("SELECT id, title, folder, project_type, frontend, backend, database, css_framework, status, qa_score, file_count, build_validated, created_at FROM projects ORDER BY $order LIMIT ? OFFSET ?");
         $projects->execute([$limit, $offset]);
     }
     respond(['projects' => $projects->fetchAll(), 'total' => (int)$total->fetchColumn(), 'limit' => $limit, 'offset' => $offset]);

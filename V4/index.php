@@ -165,8 +165,16 @@ $css_frameworks = json_decode(AC4_CSS, true);
             <button class="btn btn-sm btn-outline" onclick="document.getElementById('importFileInput').click()">📥 Importer</button>
             <input type="file" id="importFileInput" accept=".zip" style="display:none" onchange="importProject(this.files[0])">
           </div>
-          <div style="margin-bottom:10px;">
-            <input type="text" id="projectSearch" placeholder="🔍 Rechercher par titre, stack, status..." oninput="loadProjects(this.value)" style="width:100%;padding:8px 10px;font-size:.8rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);">
+          <div style="margin-bottom:10px;display:flex;gap:6px;">
+            <input type="text" id="projectSearch" placeholder="🔍 Rechercher..." oninput="loadProjects(this.value)" style="flex:1;padding:8px 10px;font-size:.8rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);">
+            <select id="projectSort" onchange="loadProjects(document.getElementById('projectSearch').value)" style="width:auto;padding:6px 8px;font-size:.75rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);">
+              <option value="date_desc">Nouveautés</option>
+              <option value="date_asc">Anciens</option>
+              <option value="score_desc">Score QA ↓</option>
+              <option value="score_asc">Score QA ↑</option>
+              <option value="title">A-Z</option>
+              <option value="status">Status</option>
+            </select>
           </div>
           <div class="item-list" id="projectsList"><div class="empty-state">Chargement...</div></div>
           <div id="projectsPagination" style="display:flex;align-items:center;justify-content:center;margin-top:10px;"></div>
