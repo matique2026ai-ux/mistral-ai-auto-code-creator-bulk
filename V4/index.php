@@ -31,6 +31,7 @@ $css_frameworks = json_decode(AC4_CSS, true);
         <button class="tab-btn active" onclick="switchTab('build')">⚡ Build</button>
         <button class="tab-btn" onclick="switchTab('keys')">🔑 Keys</button>
         <button class="tab-btn" onclick="switchTab('projects')">📁 Projects</button>
+        <button class="tab-btn" onclick="switchTab('dashboard')">📊 Dashboard</button>
       </div>
 
       <!-- BUILD PANEL -->
@@ -106,6 +107,41 @@ $css_frameworks = json_decode(AC4_CSS, true);
         <div class="card">
           <div class="card-title">💾 Clés enregistrées</div>
           <div class="item-list" id="keysList"><div class="empty-state">Chargement...</div></div>
+        </div>
+      </div>
+
+      <!-- DASHBOARD PANEL -->
+      <div class="panel" id="panelDashboard">
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-title">📊 Vue d'ensemble</div>
+          <div class="stat-grid" id="dashMetrics">
+            <div class="stat-card"><div class="stat-value" id="dashKeys">-</div><div class="stat-label">Clés actives</div></div>
+            <div class="stat-card"><div class="stat-value" id="dashTokens">-</div><div class="stat-label">Tokens totaux</div></div>
+            <div class="stat-card"><div class="stat-value" id="dashProjects">-</div><div class="stat-label">Projets</div></div>
+            <div class="stat-card"><div class="stat-value" id="dashDone">-</div><div class="stat-label">Terminés</div></div>
+            <div class="stat-card"><div class="stat-value" id="dashFailed">-</div><div class="stat-label">Échoués</div></div>
+            <div class="stat-card"><div class="stat-value" id="dashAvgScore">-</div><div class="stat-label">Score Ø</div></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-title">📈 Tokens par jour (30j)</div>
+          <div class="chart-container" id="tokenDayChart"><div class="empty-state">Aucune donnée</div></div>
+        </div>
+
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-title">🤖 Tokens par agent</div>
+          <div class="chart-container" id="tokenStepChart"><div class="empty-state">Aucune donnée</div></div>
+        </div>
+
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-title">🏆 Top projets</div>
+          <div class="item-list" id="dashTopProjects"><div class="empty-state">Aucun projet noté</div></div>
+        </div>
+
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-title">📁 Projets récents</div>
+          <div class="item-list" id="dashRecentProjects"><div class="empty-state">Aucun projet</div></div>
         </div>
       </div>
 

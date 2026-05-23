@@ -33,6 +33,7 @@ function switchTab(name) {
   document.getElementById('panel' + name.charAt(0).toUpperCase() + name.slice(1)).classList.add('active');
   if (name === 'keys') loadKeys();
   if (name === 'projects') { loadProjects(); loadStats(); }
+  if (name === 'dashboard') { loadDashboard(); }
 }
 
 // ══════════════════════════════════════════════
@@ -130,6 +131,74 @@ async function loadStats() {
   document.getElementById('statTokens').textContent = (s.tokens_total || 0) >= 1000 ? Math.round(s.tokens_total/1000)+'k' : s.tokens_total || 0;
   document.getElementById('statProjects').textContent = s.projects_total || 0;
   document.getElementById('statDone').textContent = s.projects_done || 0;
+}
+
+// ══════════════════════════════════════════════
+// DASHBOARD
+// ══════════════════════════════════════════════
+async function loadDashboard() {
+  const d = await api('get_stats');
+  const s = d.stats || {};
+  document.getElementById('dashKeys').textContent = (s.keys_active ?? 0) + '/' + (s.keys_total ?? 0);
+  document.getElementById('dashTokens').textContent = s.tokens_total >= 1000 ? Math.round(s.tokens_total/1000)+'k' : s.tokens_total || 0;
+  document.getElementById('dashProjects').textContent = s.projects_total || 0;
+  document.getElementById('dashDone').textContent = s.projects_done || 0;
+  document.getElementById('dashFailed').textContent = s.projects_failed || 0;
+  document.getElementById('dashAvgScore').textContent = s.avg_score ? s.avg_score + '/100' : '-';
+  renderTokenDayChart(s.tokens_by_day || []);
+  renderTokenStepChart(s.tokens_by_step || []);
+  renderTopProjects(s.top_projects || []);
+  renderRecentProjects(s.recent_projects || []);
+}
+
+function renderTokenDayChart(data) {
+  const el = document.getElementById('tokenDayChart');
+  if (!data.length) { el.innerHTML = '<div class="empty-state">Aucune donnée de tokens</div>'; return; }
+  const maxVal = Math.max(...data.map(d => parseInt(d.tokens)));
+  el.innerHTML = '<div class="bar-chart">' + data.map(d => {
+    const pct = maxVal > 0 ? (parseInt(d.tokens) / maxVal * 100) : 0;
+    const label = d.day.slice(5);
+    const val = parseInt(d.tokens) >= 1000 ? Math.round(parseInt(d.tokens)/1000)+'k' : d.tokens;
+    return `<div class="bar-col"><div class="bar" style="height:${pct}%"><span class="bar-val">${val}</span></div><div class="bar-label">${label}</div></div>`;
+  }).join('') + '</div>';
+}
+
+function renderTokenStepChart(data) {
+  const el = document.getElementById('tokenStepChart');
+  if (!data.length) { el.innerHTML = '<div class="empty-state">Aucune donnée</div>'; return; }
+  const maxVal = Math.max(...data.map(d => parseInt(d.tokens)));
+  el.innerHTML = '<div class="bar-chart bar-chart-h">' + data.map(d => {
+    const pct = maxVal > 0 ? (parseInt(d.tokens) / maxVal * 100) : 0;
+    const val = parseInt(d.tokens) >= 1000 ? Math.round(parseInt(d.tokens)/1000)+'k' : d.tokens;
+    const step = d.step || 'unknown';
+    const icon = {cto:'🧠',architect:'🏗️',designer:'🎨',backend:'⚡',frontend:'💻',qa:'🔍',devops:'🚀'}[step] || '🤖';
+    return `<div class="bar-row"><div class="bar-row-label">${icon} ${step}</div><div class="bar-row-track"><div class="bar-row-fill" style="width:${pct}%"></div></div><div class="bar-row-val">${val}</div></div>`;
+  }).join('') + '</div>';
+}
+
+function renderTopProjects(projects) {
+  const el = document.getElementById('dashTopProjects');
+  if (!projects.length) { el.innerHTML = '<div class="empty-state">Aucun projet noté</div>'; return; }
+  el.innerHTML = projects.map((p, i) => `
+    <div class="item-row" onclick="showProjectDetail(${p.id})" style="cursor:pointer;">
+      <div><strong>#${i+1}</strong> ${p.title}</div>
+      <div><span class="pill pill-green">${p.qa_score}/100</span> <span style="font-size:.7rem;color:var(--text-3)">${p.file_count} fichiers</span></div>
+    </div>
+  `).join('');
+}
+
+function renderRecentProjects(projects) {
+  const el = document.getElementById('dashRecentProjects');
+  if (!projects.length) { el.innerHTML = '<div class="empty-state">Aucun projet</div>'; return; }
+  el.innerHTML = projects.map(p => `
+    <div class="item-row" onclick="showProjectDetail(${p.id})" style="cursor:pointer;">
+      <div><strong>${p.title}</strong><br><span style="font-size:.7rem;color:var(--text-3);">${p.frontend} + ${p.backend}</span></div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span class="pill ${p.status === 'done' ? 'pill-green' : p.status === 'failed' ? 'pill-red' : 'pill-blue'}">${p.status}</span>
+        ${p.qa_score > 0 ? `<span class="pill pill-green">${p.qa_score}/100</span>` : ''}
+      </div>
+    </div>
+  `).join('');
 }
 
 async function showProjectDetail(id) {

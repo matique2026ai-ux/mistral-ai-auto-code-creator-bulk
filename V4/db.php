@@ -172,14 +172,29 @@ function appendLog(PDO $db, int $projectId, string $step, string $level, string 
 function getGlobalStats(PDO $db): array {
     $keys = $db->query("SELECT COUNT(*) as total, SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END) as active FROM api_keys")->fetch();
     $tokens = $db->query("SELECT SUM(tokens_used) as total FROM token_usage")->fetch();
-    $projects = $db->query("SELECT COUNT(*) as total, SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) as done FROM projects")->fetch();
-    $stacks = $db->query("SELECT project_type, COUNT(*) as cnt FROM projects GROUP BY project_type")->fetchAll();
+    $projects = $db->query("SELECT COUNT(*) as total, SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) as done, SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) as failed, SUM(CASE WHEN status='building' THEN 1 ELSE 0 END) as building FROM projects")->fetch();
+    $stacks = $db->query("SELECT project_type, COUNT(*) as cnt FROM projects GROUP BY project_type ORDER BY cnt DESC")->fetchAll();
+    $tokenByDay = $db->query("SELECT DATE(used_at) as day, SUM(tokens_used) as tokens FROM token_usage WHERE used_at >= DATE('now', '-30 days') GROUP BY DATE(used_at) ORDER BY day ASC")->fetchAll();
+    $tokenByStep = $db->query("SELECT COALESCE(step_name, 'unknown') as step, SUM(tokens_used) as tokens, COUNT(*) as calls FROM token_usage GROUP BY step_name ORDER BY tokens DESC")->fetchAll();
+    $avgScore = $db->query("SELECT AVG(qa_score) as avg, MAX(qa_score) as max, MIN(qa_score) as min FROM projects WHERE qa_score > 0")->fetch();
+    $recentProjects = $db->query("SELECT id, title, project_type, frontend, backend, status, qa_score, file_count, created_at FROM projects ORDER BY id DESC LIMIT 10")->fetchAll();
+    $topProjects = $db->query("SELECT id, title, qa_score, file_count, created_at FROM projects WHERE qa_score > 0 ORDER BY qa_score DESC LIMIT 5")->fetchAll();
+
     return [
-        'keys_total'    => (int)($keys['total'] ?? 0),
-        'keys_active'   => (int)($keys['active'] ?? 0),
-        'tokens_total'  => (int)($tokens['total'] ?? 0),
-        'projects_total'=> (int)($projects['total'] ?? 0),
-        'projects_done' => (int)($projects['done'] ?? 0),
-        'stacks'        => $stacks,
+        'keys_total'       => (int)($keys['total'] ?? 0),
+        'keys_active'      => (int)($keys['active'] ?? 0),
+        'tokens_total'     => (int)($tokens['total'] ?? 0),
+        'projects_total'   => (int)($projects['total'] ?? 0),
+        'projects_done'    => (int)($projects['done'] ?? 0),
+        'projects_failed'  => (int)($projects['failed'] ?? 0),
+        'projects_building'=> (int)($projects['building'] ?? 0),
+        'stacks'           => $stacks,
+        'tokens_by_day'    => $tokenByDay,
+        'tokens_by_step'   => $tokenByStep,
+        'avg_score'        => (int)round($avgScore['avg'] ?? 0),
+        'max_score'        => (int)($avgScore['max'] ?? 0),
+        'min_score'        => (int)($avgScore['min'] ?? 0),
+        'recent_projects'  => $recentProjects,
+        'top_projects'     => $topProjects,
     ];
 }
