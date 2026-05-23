@@ -374,37 +374,26 @@ class PipelineEngine {
     // ─── Agent Frontend (génération fichier par fichier) ──────────
 
     private function runFrontend(array $brief, array $stack, array $arch, array $design, array $backend): array {
-        $prompt = $this->loadAgentPrompt('frontend');
         $allFiles = [];
 
-        // Step 1: Generate file manifest (just filenames)
+        // Step 1: Generate file manifest (just filenames, no code)
         $this->log('ai', 'Frontend: Planification des fichiers...');
-        $manifestPrompt = str_replace(
-            'Génère TOUS les fichiers du frontend au complet en une seule réponse JSON.',
-            'Génère UNIQUEMENT la liste des fichiers à créer (noms et brève description).',
-            $prompt
-        );
         $manifestMessages = [
-            ['role' => 'system', 'content' => $manifestPrompt . "\n\nRéponse attendue : {\"files\":[{\"filename\":\"...\",\"description\":\"...\",\"language\":\"...\"}]}"],
+            ['role' => 'system', 'content' => "Tu listes les fichiers nécessaires pour un projet frontend Next.js/React. Réponds UNIQUEMENT avec ce JSON : {\"files\":[{\"filename\":\"...\",\"description\":\"brève description\"}]}. Ne mets PAS de contenu de code dans la réponse, seulement les noms de fichiers et descriptions."],
             ['role' => 'user', 'content' => json_encode([
-                'brief' => $brief,
-                'stack' => $stack,
-                'architecture' => $arch,
-                'design_system' => $design,
-                'backend' => $backend,
+                'project' => $brief['master_prompt'] ?? $brief['title'] ?? '',
+                'stack' => $stack['stack_decision'] ?? [],
                 'pages' => $arch['frontend_pages'] ?? [],
-                'components_tree' => $arch['components_tree'] ?? [],
-                'mode' => 'manifest_only',
+                'components' => $arch['components_tree'] ?? [],
             ])],
         ];
-        $manifest = $this->callWithRetry($manifestMessages, 3000, true, 'frontend-manifest');
+        $manifest = $this->callWithRetry($manifestMessages, 2000, true, 'frontend-manifest');
         $fileList = $manifest['files'] ?? [];
-        if (empty($fileList)) {
-            throw new Exception('Frontend: aucun fichier planifié');
-        }
+        if (empty($fileList)) throw new Exception('Frontend: aucun fichier planifié');
         $this->log('ok', 'Frontend: ' . count($fileList) . ' fichiers planifiés');
 
-        // Step 2: Generate each file individually
+        // Step 2: Generate each file individually with full frontend.md context
+        $prompt = $this->loadAgentPrompt('frontend');
         $total = count($fileList);
         foreach ($fileList as $i => $fileDef) {
             $this->progress(58 + intval(20 * $i / $total), "Frontend: fichier " . ($i + 1) . "/{$total}...");
@@ -412,7 +401,7 @@ class PipelineEngine {
             $this->log('ai', "Frontend: Génération de {$filename}...");
 
             $fileMessages = [
-                ['role' => 'system', 'content' => "Tu génères UN SEUL fichier frontend. Réponse JSON : {\"filename\":\"...\",\"content\":\"...\",\"language\":\"...\"}"],
+                ['role' => 'system', 'content' => $prompt . "\n\nIMPORTANT: GÉNÈRE UNIQUEMENT LE FICHIER {$filename}. Réponse JSON: {\"filename\":\"{$filename}\",\"content\":\"code complet ici\",\"language\":\"tsx\"}"],
                 ['role' => 'user', 'content' => json_encode([
                     'brief' => $brief,
                     'stack' => $stack,
@@ -424,19 +413,17 @@ class PipelineEngine {
                     'all_planned_files' => array_column($fileList, 'filename'),
                 ])],
             ];
-            $fileResult = $this->callWithRetry($fileMessages, 4000, true, "frontend-file");
+            $fileResult = $this->callWithRetry($fileMessages, 4000, true, 'frontend-file');
 
             $genFilename = $fileResult['filename'] ?? $filename;
             $genContent = $fileResult['content'] ?? '';
             if ($genContent) {
                 $allFiles[] = ['filename' => $genFilename, 'content' => $genContent, 'language' => $fileDef['language'] ?? 'tsx'];
             }
-            usleep(300000); // 300ms pause between files
+            usleep(300000);
         }
 
-        if (empty($allFiles)) {
-            throw new Exception('Frontend: aucun fichier généré');
-        }
+        if (empty($allFiles)) throw new Exception('Frontend: aucun fichier généré');
         return ['files' => $allFiles];
     }
 
