@@ -85,6 +85,33 @@ function migrateDB(PDO $db): void {
     } catch (\Exception $e) {
         // Column already exists
     }
+
+    // Migration v4.5: job queue table
+    $db->exec("CREATE TABLE IF NOT EXISTS jobs (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id    INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        job_name      TEXT NOT NULL,
+        status        TEXT NOT NULL DEFAULT 'pending',
+        depends_on    TEXT DEFAULT '',
+        retry_count   INTEGER NOT NULL DEFAULT 0,
+        max_retries   INTEGER NOT NULL DEFAULT 2,
+        error_message TEXT,
+        started_at    DATETIME,
+        finished_at   DATETIME,
+        created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+    )");
+    try {
+        $db->exec("ALTER TABLE jobs ADD COLUMN worker_id TEXT");
+    } catch (\Exception $e) {}
+    try {
+        $db->exec("ALTER TABLE build_logs ADD COLUMN job_name TEXT");
+    } catch (\Exception $e) {}
+    try {
+        $db->exec("ALTER TABLE api_keys ADD COLUMN provider TEXT NOT NULL DEFAULT 'mistral'");
+    } catch (\Exception $e) {}
+    try {
+        $db->exec("ALTER TABLE api_keys ADD COLUMN model_override TEXT DEFAULT ''");
+    } catch (\Exception $e) {}
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -137,9 +164,9 @@ function updateProject(PDO $db, int $id, array $fields): void {
     $db->prepare("UPDATE projects SET $sets WHERE id = ?")->execute($vals);
 }
 
-function appendLog(PDO $db, int $projectId, string $step, string $level, string $message): void {
-    $db->prepare("INSERT INTO build_logs (project_id, step, level, message) VALUES (?,?,?,?)")
-       ->execute([$projectId, $step, $level, $message]);
+function appendLog(PDO $db, int $projectId, string $step, string $level, string $message, string $jobName = ''): void {
+    $db->prepare("INSERT INTO build_logs (project_id, step, level, message, job_name) VALUES (?,?,?,?,?)")
+       ->execute([$projectId, $step, $level, $message, $jobName]);
 }
 
 function getGlobalStats(PDO $db): array {

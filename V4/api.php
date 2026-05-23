@@ -21,9 +21,48 @@ $db = getDB();
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 function p(string $key, $default = '') { global $body; return $body[$key] ?? $_POST[$key] ?? $_GET[$key] ?? $default; }
+function pInt(string $key, int $default = 0): int { return (int)p($key, (string)$default); }
+function pSafe(string $key, string $default = ''): string { return strip_tags(trim(p($key, $default))); }
 function respond(array $data): never { echo json_encode($data); exit; }
 function err(string $msg): never { respond(['error' => $msg]); }
 function ok(array $extra = []): never { respond(array_merge(['success' => true], $extra)); }
+
+// ─── Validation ──────────────────────────────────────────────────────
+function validateAllowedKeys(array $data, array $allowed): array {
+    $clean = [];
+    foreach ($allowed as $key => $type) {
+        if (!isset($data[$key])) continue;
+        $v = $data[$key];
+        $clean[$key] = match ($type) {
+            'int' => (int)$v,
+            'string' => strip_tags(trim((string)$v)),
+            'bool' => (bool)$v,
+            'array' => is_array($v) ? $v : [],
+            default => strip_tags(trim((string)$v)),
+        };
+    }
+    return $clean;
+}
+
+function validateProvider(string $provider): string {
+    $allowed = ['mistral', 'openai', 'anthropic', 'google'];
+    return in_array($provider, $allowed) ? $provider : 'mistral';
+}
+
+function validateProjectType(string $type): string {
+    $allowed = ['fullstack', 'mobile', 'api', 'static'];
+    return in_array($type, $allowed) ? $type : 'fullstack';
+}
+
+function validateStackItem(string $item, string $category): string {
+    $stacks = json_decode(AC4_STACKS, true);
+    $allItems = [];
+    foreach ($stacks as $s) {
+        if (isset($s[$category])) $allItems = array_merge($allItems, $s[$category]);
+    }
+    $allItems = array_unique($allItems);
+    return in_array($item, $allItems) ? $item : '';
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 //  ACTIONS
@@ -34,9 +73,10 @@ function ok(array $extra = []): never { respond(array_merge(['success' => true],
 if ($action === 'add_key') {
     $label = trim(p('label'));
     $key   = trim(p('key'));
+    $provider = trim(p('provider', 'mistral'));
     if (!$label || !$key) err('Label and key required');
-    $stmt = $db->prepare("INSERT OR IGNORE INTO api_keys (label, key_val) VALUES (?, ?)");
-    $stmt->execute([$label, $key]);
+    $stmt = $db->prepare("INSERT OR IGNORE INTO api_keys (label, key_val, provider) VALUES (?, ?, ?)");
+    $stmt->execute([$label, $key, $provider]);
     if (!$db->lastInsertId()) err('Key already exists');
     ok(['id' => (int)$db->lastInsertId()]);
 }
@@ -83,31 +123,39 @@ if ($action === 'key_error') {
 // ─── DATA ─────────────────────────────────────────────────────────────
 
 if ($action === 'get_data') {
-    $keys = $db->query("SELECT id, label, substr(key_val,1,8)||'···'||substr(key_val,-4) AS key_masked, is_active, error_count, total_tokens, total_calls, last_used FROM api_keys ORDER BY id DESC")->fetchAll();
+    $keys = $db->query("SELECT id, label, provider, substr(key_val,1,8)||'···'||substr(key_val,-4) AS key_masked, is_active, error_count, total_tokens, total_calls, last_used FROM api_keys ORDER BY id DESC")->fetchAll();
     $stats = getGlobalStats($db);
-    respond(['keys' => $keys, 'stats' => $stats, 'stacks' => json_decode(AC4_STACKS, true)]);
+    $providers = json_decode(AC4_PROVIDERS, true);
+    respond(['keys' => $keys, 'stats' => $stats, 'stacks' => json_decode(AC4_STACKS, true), 'providers' => $providers]);
 }
 
 // ─── PROJECTS ─────────────────────────────────────────────────────────
 
 if ($action === 'create_project') {
-    $masterPrompt = trim(p('master_prompt'));
-    $title    = trim(p('title')) ?: ($masterPrompt ? substr($masterPrompt, 0, 50) : 'Project ' . date('YmdHis'));
-    $who      = trim(p('who'));
-    $target   = trim(p('target'));
-    $monetize = trim(p('monetize'));
-    $type     = p('type', 'fullstack');
-    $frontend = p('frontend', '');
-    $backend  = p('backend', '');
-    $database = p('database', '');
-    $css      = p('css', '');
-    $lang     = p('lang', 'fr');
+    $masterPrompt = pSafe('master_prompt');
+    $title    = pSafe('title') ?: ($masterPrompt ? substr($masterPrompt, 0, 50) : 'Project ' . date('YmdHis'));
+    $who      = pSafe('who');
+    $target   = pSafe('target');
+    $monetize = pSafe('monetize');
+    $type     = validateProjectType(p('type', 'fullstack'));
+    $frontend = validateStackItem(p('frontend', ''), 'frontends');
+    $backend  = validateStackItem(p('backend', ''), 'backends');
+    $database = validateStackItem(p('database', ''), 'databases');
+    $css      = validateStackItem(p('css', ''), 'css');
+    $lang     = in_array(p('lang', 'fr'), ['fr','en','ar','es','de','pt','zh','ja']) ? p('lang', 'fr') : 'fr';
+
+    // Validate master prompt length
+    if (strlen($masterPrompt) > 10000) err('Master prompt trop long (max 10000 caractères)');
+
     $slug     = 'site_' . time() . '_' . substr(md5($masterPrompt ?: $title), 0, 8);
     $folder   = AC4_BUILDS_WEB . '/' . $slug;
 
     $brief = $masterPrompt
         ? json_encode(['master_prompt' => $masterPrompt, 'who' => $who, 'target' => $target, 'monetize' => $monetize])
         : json_encode(compact('who', 'target', 'monetize'));
+
+    // Prevent directory traversal in slug
+    if (preg_match('/[\/\\\\]/', $slug)) err('Invalid slug');
 
     $id = createProject($db, [
         'title' => $title, 'folder' => $folder, 'type' => $type,
@@ -167,9 +215,15 @@ if ($action === 'run_build') {
     // Clear old logs
     $db->prepare("DELETE FROM build_logs WHERE project_id = ?")->execute([$id]);
     $db->prepare("DELETE FROM generated_files WHERE project_id = ?")->execute([$id]);
+    $db->prepare("DELETE FROM jobs WHERE project_id = ?")->execute([$id]);
     updateProject($db, $id, ['status' => 'building']);
 
-    // Spawn background build process
+    // Enqueue all pipeline jobs via the queue system
+    require_once __DIR__ . '/queue.php';
+    $queue = new JobQueue();
+    $queue->enqueueProject($id);
+
+    // Spawn background worker process
     $scriptPath = __DIR__ . DIRECTORY_SEPARATOR . 'background_build.php';
     $phpBin = PHP_BINARY;
     $cmd = "\"$phpBin\" \"$scriptPath\" $id";
@@ -180,7 +234,65 @@ if ($action === 'run_build') {
         exec("nohup $cmd > /dev/null 2>&1 &");
     }
 
-    ok(['message' => 'Build démarré en arrière-plan', 'project_id' => $id]);
+    ok(['message' => 'Build démarré en arrière-plan (queue parallèle)', 'project_id' => $id]);
+}
+
+// ─── SSE (Server-Sent Events) — logs en temps réel ──────────────────
+
+if ($action === 'sse_stream') {
+    set_time_limit(0);
+    $id = (int)p('project_id'); if (!$id) err('Project ID required');
+
+    header('Content-Type: text/event-stream');
+    header('Cache-Control: no-cache');
+    header('X-Accel-Buffering: no');
+    header('Connection: keep-alive');
+
+    $lastId = 0;
+    $maxPolls = 180; // 6 minutes
+
+    for ($i = 0; $i < $maxPolls; $i++) {
+        if (connection_aborted()) break;
+
+        $logs = $db->prepare(
+            "SELECT id, step, level, message, job_name, logged_at FROM build_logs WHERE project_id = ? AND id > ? ORDER BY id ASC"
+        );
+        $logs->execute([$id, $lastId]);
+        $rows = $logs->fetchAll();
+
+        foreach ($rows as $row) {
+            $lastId = (int)$row['id'];
+            $data = json_encode([
+                'id' => $row['id'],
+                'step' => $row['step'],
+                'level' => $row['level'],
+                'message' => $row['message'],
+                'job' => $row['job_name'],
+                'time' => $row['logged_at'],
+            ]);
+            echo "id: {$row['id']}\nevent: log\ndata: $data\n\n";
+        }
+
+        // Check project status
+        $project = $db->query("SELECT status, qa_score FROM projects WHERE id = $id")->fetch();
+        if ($project) {
+            $statusData = json_encode([
+                'status' => $project['status'],
+                'qa_score' => (int)($project['qa_score'] ?? 0),
+            ]);
+            echo "event: status\ndata: $statusData\n\n";
+        }
+
+        if ($project && in_array($project['status'], ['done', 'failed'])) {
+            echo "event: done\ndata: {\"status\":\"{$project['status']}\"}\n\n";
+            break;
+        }
+
+        ob_flush(); flush();
+        sleep(1);
+    }
+
+    exit;
 }
 
 // ─── FILES (ZIP download) ─────────────────────────────────────────────

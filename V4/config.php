@@ -6,11 +6,58 @@
 define('AC4_VERSION', '4.0.0');
 define('AC4_NAME', 'AutoCoder');
 
-// ─── IA ───────────────────────────────────────────────────────────────────
+// ─── IA — Providers ────────────────────────────────────────────────────────
 define('AC4_MODEL',       'devstral-2512');
 define('AC4_API_URL',     'https://api.mistral.ai/v1/chat/completions');
 define('AC4_MAX_TOKENS',  32000);
 define('AC4_MAX_KEY_ERRORS', 3);
+
+define('AC4_PROVIDERS', json_encode([
+    'mistral' => [
+        'label' => 'Mistral AI',
+        'icon'  => '🔮',
+        'base_url' => 'https://api.mistral.ai/v1/chat/completions',
+        'models' => ['devstral-2512', 'mistral-large-2411', 'mistral-small-2509', 'codestral-2505'],
+        'default_model' => 'devstral-2512',
+        'headers' => ['Authorization' => 'Bearer {key}', 'Content-Type' => 'application/json'],
+    ],
+    'openai' => [
+        'label' => 'OpenAI',
+        'icon'  => '🤖',
+        'base_url' => 'https://api.openai.com/v1/chat/completions',
+        'models' => ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o3-mini'],
+        'default_model' => 'gpt-4o-mini',
+        'headers' => ['Authorization' => 'Bearer {key}', 'Content-Type' => 'application/json'],
+    ],
+    'anthropic' => [
+        'label' => 'Anthropic Claude',
+        'icon'  => '🌿',
+        'base_url' => 'https://api.anthropic.com/v1/messages',
+        'models' => ['claude-sonnet-4-20250514', 'claude-haiku-3-5-20241022'],
+        'default_model' => 'claude-sonnet-4-20250514',
+        'headers' => ['x-api-key' => '{key}', 'anthropic-version' => '2023-06-01', 'Content-Type' => 'application/json'],
+    ],
+    'google' => [
+        'label' => 'Google Gemini',
+        'icon'  => '🔬',
+        'base_url' => 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent',
+        'models' => ['gemini-2.0-flash', 'gemini-2.5-pro-exp-03-25'],
+        'default_model' => 'gemini-2.0-flash',
+        'headers' => ['Content-Type' => 'application/json'],
+    ],
+]));
+
+define('AC4_AGENT_MODEL_MAP', json_encode([
+    'cto'       => ['provider' => 'mistral',    'model' => 'devstral-2512',     'max_tokens' => 16000],
+    'architect' => ['provider' => 'mistral',    'model' => 'devstral-2512',     'max_tokens' => 16000],
+    'designer'  => ['provider' => 'mistral',    'model' => 'devstral-2512',     'max_tokens' => 16000],
+    'backend'   => ['provider' => 'mistral',    'model' => 'codestral-2505',    'max_tokens' => 32000],
+    'frontend'  => ['provider' => 'mistral',    'model' => 'codestral-2505',    'max_tokens' => 32000],
+    'qa'        => ['provider' => 'mistral',    'model' => 'devstral-2512',     'max_tokens' => 16000],
+    'devops'    => ['provider' => 'mistral',    'model' => 'devstral-2512',     'max_tokens' => 16000],
+]));
+
+define('AC4_PROVIDER_FALLBACK_ORDER', 'mistral,openai,anthropic,google');
 
 // ─── Pipeline ─────────────────────────────────────────────────────────────
 define('AC4_MAX_ITERATIONS', 5);

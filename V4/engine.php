@@ -5,78 +5,35 @@
  */
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/models.php';
+require_once __DIR__ . '/sandbox.php';
 
 class PipelineEngine {
     private PDO $db;
     private int $projectId;
     private string $projectFolder;
-    private string $currentKey = '';
-    private int $currentKeyId = 0;
     private array $generatedFiles = [];
     private array $state = [];
+    private ?AIModel $ai = null;
 
     public function __construct() {
         $this->db = getDB();
+        $this->ai = new AIModel();
     }
 
-    // ─── API Mistral ──────────────────────────────────────────────────
+    // ─── IA Multi-modèle ─────────────────────────────────────────────
 
     private function callAI(array $messages, int $maxTokens = 4000, bool $jsonMode = true, string $step = ''): array {
-        $key = $this->getKey();
-        $payload = [
-            'model' => AC4_MODEL,
-            'messages' => $messages,
-            'max_tokens' => $maxTokens,
-        ];
-        if ($jsonMode) $payload['response_format'] = ['type' => 'json_object'];
-
-        $ch = curl_init(AC4_API_URL);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST => true,
-            CURLOPT_TIMEOUT => 300,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => 0,
-            CURLOPT_HTTPHEADER => [
-                'Authorization: Bearer ' . $this->currentKey,
-                'Content-Type: application/json',
-            ],
-            CURLOPT_POSTFIELDS => json_encode($payload),
-        ]);
-        $resp = curl_exec($ch);
-        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($code !== 200) {
-            markKeyError($this->db, $this->currentKeyId);
-            $this->getKey(); // retry with next key
-            $this->log('err', "HTTP $code - key rotated");
-            return $this->callAI($messages, $maxTokens, $jsonMode, $step); // retry
-        }
-
-        $data = json_decode($resp, true);
-        $tokens = $data['usage']['total_tokens'] ?? 0;
-        recordTokens($this->db, $this->currentKeyId, $tokens, $this->projectId, $step);
-
-        return [
-            'content' => $data['choices'][0]['message']['content'],
-            'tokens' => $tokens,
-        ];
-    }
-
-    private function getKey(): array {
-        $k = getNextApiKey($this->db);
-        if (!$k) throw new Exception('Aucune clé API disponible');
-        $this->currentKey = $k['key_val'];
-        $this->currentKeyId = $k['id'];
-        return $k;
+        return $this->ai->call($messages, $maxTokens, $jsonMode, $step);
     }
 
     // ─── Logging ──────────────────────────────────────────────────────
 
+    private string $currentJobName = '';
+
     private function log(string $level, string $message): void {
         $step = debug_backtrace()[1]['function'] ?? 'engine';
-        appendLog($this->db, $this->projectId, $step, $level, $message);
+        appendLog($this->db, $this->projectId, $step, $level, $message, $this->currentJobName);
         echo json_encode(['type' => 'log', 'level' => $level, 'step' => $step, 'message' => $message]) . "\n";
         if (ob_get_level()) ob_flush(); flush();
     }
@@ -121,6 +78,191 @@ class PipelineEngine {
     private function loadAgentPrompt(string $name): string {
         $path = AC4_AGENTS_DIR . DIRECTORY_SEPARATOR . $name . '.md';
         return file_exists($path) ? file_get_contents($path) : '';
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  JOB INDIVIDUEL — exécute UNE étape du pipeline
+    // ═══════════════════════════════════════════════════════════════════
+
+    public function runJob(int $projectId, string $jobName, array $context = []): array {
+        $this->projectId = $projectId;
+        $this->currentJobName = $jobName;
+
+        $project = $this->db->query("SELECT * FROM projects WHERE id = $projectId")->fetch();
+        if (!$project) throw new Exception("Project #$projectId not found");
+
+        $this->projectFolder = $project['folder'];
+
+        $stackDecision = [
+            'analysis' => ['project_type' => $project['project_type'] ?? 'fullstack'],
+            'stack_decision' => [
+                'frontend' => $project['frontend'] ?? 'next',
+                'backend' => $project['backend'] ?? 'node_express',
+                'database' => $project['database'] ?? 'sqlite',
+                'css_framework' => $project['css_framework'] ?? 'tailwind',
+            ],
+        ];
+
+        // If stack_choice exists in DB, use full decision
+        if (!empty($project['stack_choice'])) {
+            $saved = @json_decode($project['stack_choice'], true);
+            if ($saved) $stackDecision = $saved;
+        }
+
+        $architecture = @json_decode($project['arch_json'], true) ?: [];
+
+        $brief = @json_decode($project['brief'], true) ?: [];
+        $brief['title'] = $project['title'];
+        $brief['project_id'] = $projectId;
+        $brief['folder'] = $project['folder'];
+        $brief['project_type'] = $project['project_type'] ?? '';
+        $brief['frontend'] = $project['frontend'] ?? '';
+        $brief['backend'] = $project['backend'] ?? '';
+        $brief['database'] = $project['database'] ?? '';
+        $brief['css_framework'] = $project['css_framework'] ?? '';
+        $brief['master_prompt'] = $brief['master_prompt'] ?? '';
+
+        $this->log('sys', "▶ Job: $jobName (projet #$projectId)");
+
+        try {
+            return match ($jobName) {
+                'cto' => $this->runJobCTO($brief, $project, $stackDecision),
+                'architect' => $this->runJobArchitect($brief, $stackDecision, $project),
+                'designer' => $this->runJobDesigner($brief, $stackDecision, $project),
+                'backend' => $this->runJobBackend($brief, $stackDecision, $architecture, $project),
+                'frontend' => $this->runJobFrontend($brief, $stackDecision, $architecture, $project),
+                'qa' => $this->runJobQA($brief, $stackDecision, $project),
+                'devops' => $this->runJobDevOps($brief, $stackDecision, $architecture, $project),
+                default => throw new Exception("Unknown job: $jobName"),
+            };
+        } catch (\Exception $e) {
+            $this->log('err', "Job $jobName échoué: " . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    private function runJobCTO(array $brief, array $project, array &$stackDecision): array {
+        $this->progress(5, 'CTO : Analyse du besoin...');
+        $decision = $this->runCTO($brief);
+
+        $update = [
+            'project_type' => $decision['analysis']['project_type'],
+            'frontend'     => $decision['stack_decision']['frontend'],
+            'backend'      => $decision['stack_decision']['backend'],
+            'database'     => $decision['stack_decision']['database'],
+            'css_framework'=> $decision['stack_decision']['css_framework'],
+            'stack_choice' => json_encode($decision),
+        ];
+        if (!empty($decision['analysis']['extracted_title'])) {
+            $update['title'] = $decision['analysis']['extracted_title'];
+        }
+        updateProject($this->db, $this->projectId, $update);
+        $this->log('ok', "Stack: {$decision['stack_decision']['frontend']} + {$decision['stack_decision']['backend']} + {$decision['stack_decision']['database']}");
+
+        // Update stackDecision in DB for subsequent jobs
+        $this->db->prepare("UPDATE projects SET stack_choice = ? WHERE id = ?")
+            ->execute([json_encode($decision), $this->projectId]);
+
+        return $decision;
+    }
+
+    private function runJobArchitect(array $brief, array $stackDecision, array $project): array {
+        $this->progress(15, 'Architecte : Conception...');
+        $architecture = $this->runArchitect($brief, $stackDecision);
+        updateProject($this->db, $this->projectId, ['arch_json' => json_encode($architecture)]);
+        $this->log('ok', "Architecture: {$architecture['site_name']} — " . count($architecture['frontend_pages'] ?? []) . " pages");
+        return $architecture;
+    }
+
+    private function runJobDesigner(array $brief, array $stackDecision, array $project): array {
+        $architecture = @json_decode($project['arch_json'], true) ?: [];
+        $this->progress(28, 'Designer : Design system...');
+        $design = $this->runDesigner($brief, $stackDecision, $architecture);
+        $this->log('ok', 'Design system créé');
+        return $design;
+    }
+
+    private function runJobBackend(array $brief, array $stackDecision, array $architecture, array $project): array {
+        $design = $this->getDesignSystem($project);
+        $this->progress(40, 'Backend : Génération...');
+        $result = $this->runBackend($brief, $stackDecision, $architecture, $design);
+        foreach (($result['files'] ?? []) as $f) $this->writeFile($f['filename'], $f['content']);
+        foreach (($result['config_files'] ?? []) as $f) $this->writeFile($f['filename'], $f['content']);
+        $fc = count($result['files'] ?? []) + count($result['config_files'] ?? []);
+        $this->log('ok', "Backend: $fc fichiers");
+        return $result;
+    }
+
+    private function runJobFrontend(array $brief, array $stackDecision, array $architecture, array $project): array {
+        $design = $this->getDesignSystem($project);
+        $backendResult = $this->getBackendContext($architecture);
+        $this->progress(58, 'Frontend : Génération...');
+        $result = $this->runFrontend($brief, $stackDecision, $architecture, $design, $backendResult);
+        $this->log('ok', 'Frontend généré: ' . count($result['files'] ?? []) . ' fichiers');
+        return $result;
+    }
+
+    private function runJobQA(array $brief, array $stackDecision, array $project): array {
+        $buildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($project['folder']);
+        $existingFiles = $this->scanFiles($buildDir);
+
+        $this->progress(75, 'QA : Validation...');
+        $result = $this->qaFixLoop($brief, $stackDecision, $existingFiles);
+
+        $score = $result['overall_score'] ?? 0;
+        $buildSuccess = $result['build_success'] ?? false;
+
+        updateProject($this->db, $this->projectId, [
+            'qa_score' => $score,
+            'file_count' => count($existingFiles),
+            'build_validated' => $buildSuccess ? 1 : 0,
+        ]);
+
+        $this->log('test', "Score QA: $score/100, Build: " . ($buildSuccess ? '✅' : '❌'));
+        return $result;
+    }
+
+    private function runJobDevOps(array $brief, array $stackDecision, array $architecture, array $project): array {
+        $this->progress(90, 'DevOps : Déploiement...');
+        $result = $this->runDevOps($brief, $stackDecision, $architecture);
+        foreach (($result['files'] ?? []) as $f) $this->writeFile($f['filename'], $f['content']);
+        $this->generateReadme($architecture, $stackDecision, (int)$project['qa_score']);
+        $this->log('ok', 'DevOps + README prêts');
+        return $result;
+    }
+
+    private function getDesignSystem(array $project): array {
+        // Design system is reconstructed from context each time
+        $brief = @json_decode($project['brief'], true) ?: [];
+        $brief['title'] = $project['title'];
+        $brief['project_id'] = $project['id'];
+        $brief['folder'] = $project['folder'];
+
+        $stackDecision = [
+            'analysis' => ['project_type' => $project['project_type'] ?? 'fullstack'],
+            'stack_decision' => [
+                'frontend' => $project['frontend'] ?? 'next',
+                'backend' => $project['backend'] ?? 'node_express',
+                'database' => $project['database'] ?? 'sqlite',
+                'css_framework' => $project['css_framework'] ?? 'tailwind',
+            ],
+        ];
+        if (!empty($project['stack_choice'])) {
+            $saved = @json_decode($project['stack_choice'], true);
+            if ($saved) $stackDecision = $saved;
+        }
+
+        $architecture = @json_decode($project['arch_json'], true) ?: [];
+        return $this->runDesigner($brief, $stackDecision, $architecture);
+    }
+
+    private function getBackendContext(array $arch): array {
+        $endpoints = $arch['api_endpoints'] ?? [];
+        $files = [];
+        foreach ($endpoints as $ep) {
+            $files[] = ['filename' => ($ep['method'] ?? 'GET') . ' ' . ($ep['path'] ?? '/'), 'content' => ''];
+        }
+        return ['files' => $files, 'config_files' => []];
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -716,20 +858,23 @@ class PipelineEngine {
             return ['success' => true, 'errors' => []];
         }
 
-        $this->log('sys', '═══ Validation Build (' . count($commands) . ' commandes) ═══');
+        $sandbox = new BuildSandbox($this->projectFolder);
+        $this->log('sys', '═══ Validation Build via Sandbox (' . count($commands) . ' commandes) ═══');
+
+        $stack = $this->detectStackType($stackDecision);
 
         foreach ($commands as $cmd) {
             $this->log('sys', "→ {$cmd['name']}...");
-            $output = [];
-            $code = -1;
-            $escaped = '"' . str_replace('"', '\"', $cmd['cmd']) . '"';
-            if (PHP_OS_FAMILY === 'Windows') {
-                $fullCmd = "cd /d \"{$cmd['cwd']}\" && $escaped";
-            } else {
-                $fullCmd = "cd \"{$cmd['cwd']}\" && $escaped";
-            }
-            exec($fullCmd, $output, $code);
-            $outStr = implode("\n", array_slice($output, -20));
+
+            $result = $sandbox->execute([
+                'cmd' => $cmd['cmd'],
+                'cwd' => $cmd['cwd'],
+                'stack' => $stack,
+                'timeout' => $cmd['optional'] ? 60 : 120,
+            ]);
+
+            $code = $result['code'];
+            $outStr = implode("\n", array_slice($result['output'], -20));
 
             if ($code !== 0) {
                 if ($cmd['optional']) {
@@ -745,10 +890,24 @@ class PipelineEngine {
             }
         }
 
+        $sandbox->cleanup();
+
         return [
             'success' => empty(array_filter($errors, fn($e) => $e['severity'] === 'error')),
             'errors' => $errors,
         ];
+    }
+
+    private function detectStackType(array $stackDecision): string {
+        $back = $stackDecision['stack_decision']['backend'] ?? '';
+        return match (true) {
+            in_array($back, ['fastapi_python', 'django_python']) => 'python',
+            $back === 'go_gin' => 'go',
+            $back === 'rust_actix' => 'rust',
+            in_array($back, ['kotlin']) => 'kotlin',
+            $stackDecision['stack_decision']['frontend'] === 'flutter' => 'flutter',
+            default => 'node',
+        };
     }
 
     // ═══════════════════════════════════════════════════════════════════
