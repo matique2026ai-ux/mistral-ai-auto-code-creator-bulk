@@ -66,6 +66,9 @@ Thumbs.db
 
 # Local SQLite databases and builds
 V3/autocoder_v3.sqlite
+autocoder.sqlite
 V3/builds/
+V3.zip
+*.zip
 
 ```
