@@ -484,6 +484,20 @@ $stats = getGlobalStats($db);
     color: var(--error);
     background: rgba(239, 68, 68, 0.05);
   }
+  .agent-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #000;
+    font-size: 0.6rem;
+    font-weight: 700;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
 
   /* Self-Healing / Auto-Correction Indicator */
   .healing-banner {
@@ -759,7 +773,7 @@ $stats = getGlobalStats($db);
   <main class="main-content">
     <div class="top-navbar">
       <div>
-        <h2 style="font-size: 1.1rem; font-weight: 700;" data-i18n="nav_title">Autonomous Agent Pipeline</h2>
+        <h2 style="font-size: 1.1rem; font-weight: 700;" data-i18n="nav_title">🤖 Multi-Agent Pipeline</h2>
         <p style="font-size: 0.75rem; color: var(--text-secondary);" id="activeModelStatus">Rotating API Key pool • Active Model: devstral-2512</p>
       </div>
       <div style="display: flex; gap: 8px;">
@@ -771,7 +785,7 @@ $stats = getGlobalStats($db);
     <!-- PIPELINE STATUS & STEPS TRACKER -->
     <div class="steps-box">
       <div class="progress-container">
-        <span id="pipelineProgressLabel" data-i18n="standing_by">Ready to launch agent loop...</span>
+        <span id="pipelineProgressLabel" data-i18n="standing_by">Ready — 5 agents standing by...</span>
         <span id="pipelineProgressPct" style="font-family: var(--font-mono)">0%</span>
       </div>
       <div class="progress-bg"><div class="progress-fill" id="pipelineProgressFill"></div></div>
@@ -1110,18 +1124,15 @@ function updateDefaultPages() {
 <script>
 // Pipeline definition: 12 stages with auto-healing, self-reflection, and error recovery features.
 const PIPELINE_STAGES = [
-  { id: 'key_check', label: 'API Key Rotator & Readiness' },
-  { id: 'brief_digest', label: 'Brief Digestion & AI Modeling' },
-  { id: 'niche_research', label: 'Autonomous Niche & Competitor Research' },
-  { id: 'arch_design', label: 'AI Structural & UI Architecture' },
-  { id: 'css_shared', label: 'CSS Stylesheet & Layout Framework' },
-  { id: 'config_shared', label: 'PHP Server Configuration Setup' },
-  { id: 'page_generation', label: 'PHP Page Source Generation' },
-  { id: 'file_persistance', label: 'Hard-Disk Persistent Writing' },
-  { id: 'ai_qa_reflection', label: 'Autonomous AI QA Code Reflection' },
-  { id: 'self_healing', label: 'Self-Correction & Healing Cycle' },
-  { id: 'seo_engine', label: 'SEO robots.txt + Sitemap Generation' },
-  { id: 'sandbox_publish', label: 'Live Sandbox Environment Deploy' }
+  { id: 'key_check', label: '🔑 API Key Check', agent: null },
+  { id: 'niche_research', label: '📊 Market Research', agent: 'researcher' },
+  { id: 'arch_design', label: '🧠 Architect — Site Structure', agent: 'architect' },
+  { id: 'css_shared', label: '🎨 Designer — CSS Styling', agent: 'designer' },
+  { id: 'page_generation', label: '💻 Developer — Page Code', agent: 'developer' },
+  { id: 'ai_qa_reflection', label: '🔍 Reviewer — QA Inspection', agent: 'reviewer' },
+  { id: 'self_healing', label: '🔄 Self-Healing Loop', agent: null },
+  { id: 'seo_engine', label: '📈 SEO & Docs', agent: null },
+  { id: 'sandbox_publish', label: '🚀 Deploy & Preview', agent: null }
 ];
 
 let isCurrentlyBuilding = false;
@@ -1139,6 +1150,7 @@ function renderPipelineStages() {
     <div class="step-pill" id="step-${s.id}">
       <span class="step-num" style="font-family: var(--font-mono); opacity: 0.5;">${String(idx+1).padStart(2, '0')}</span>
       <span>${s.label}</span>
+      ${s.agent ? `<span class="agent-badge">${s.agent[0].toUpperCase()}</span>` : ''}
     </div>
   `).join('');
 }
@@ -1370,7 +1382,7 @@ async function launchAutonomousBuild() {
   clearTerminalLogs();
   
   log('sys', '═══════════════════════════════════════════════════════════');
-  log('sys', '🚀 AUTONOMOUS AI PIPELINE INITIATED — SELF-HEALING ENGINE ONLINE');
+  log('sys', '🤖 MULTI-AGENT PIPELINE INITIATED — 5 SPECIALIZED AGENTS READY');
   log('sys', '═══════════════════════════════════════════════════════════');
   
   try {
@@ -1385,8 +1397,8 @@ async function launchAutonomousBuild() {
     log('ok', `API Key pool checked: ${activeKeysCount} active key(s) ready to host pipeline.`);
     updateStageStatus('key_check', 'completed');
     
-    // Stage 2: Brief digest
-    updateStageStatus('brief_digest', 'active');
+    // Stage 2: Brief digestion (part of market research)
+    updateStageStatus('niche_research', 'active');
     setProgress(10, t('progress_digest'));
     const siteType = document.getElementById('siteType').value;
     const outputLang = document.getElementById('outputLang').value;
@@ -1414,9 +1426,8 @@ async function launchAutonomousBuild() {
     activeProjectSlug = projResponse.slug;
     
     log('ok', `Database entry generated. Project ID: #${activeProjectId}. Workspace target: ${activeProjectFolder}`);
-    updateStageStatus('brief_digest', 'completed');
     
-    // Stage: Niche Research
+    // Stage 3: Niche Research
     updateStageStatus('niche_research', 'active');
     setProgress(15, t('progress_research'));
     
@@ -1459,7 +1470,7 @@ async function launchAutonomousBuild() {
     log('ok', `Defined Copywriting headline: "${activeNicheResearch.copywriting_hooks.hero_headline}"`);
     updateStageStatus('niche_research', 'completed');
     
-    // Stage 3: Architecture Generation
+    // Agent 2: Architecture Generation (Architect)
     updateStageStatus('arch_design', 'active');
     setProgress(22, t('progress_architecture'));
     
@@ -1514,7 +1525,7 @@ async function launchAutonomousBuild() {
     
     updateStageStatus('arch_design', 'completed');
     
-    // Stage 4: CSS Stylesheet Generation
+    // Agent 3: CSS Stylesheet Generation (Designer)
     updateStageStatus('css_shared', 'active');
     setProgress(30, t('progress_css'));
     let cssCode = '';
@@ -1580,8 +1591,8 @@ async function launchAutonomousBuild() {
     log('ok', `Styles framework style.css persisted inside sandbox!`);
     updateStageStatus('css_shared', 'completed');
     
-    // Stage 5: Config Shared File Setup
-    updateStageStatus('config_shared', 'active');
+    // Config step (under developer)
+    updateStageStatus('page_generation', 'active');
     setProgress(35, t('progress_config'));
     const configContent = `\x3c?php
     define('SITE_NAME', ${JSON.stringify(activeSiteArchitecture.site_name)});
@@ -1604,9 +1615,8 @@ async function launchAutonomousBuild() {
       })
     });
     log('ok', `PHP site configuration config.php written.`);
-    updateStageStatus('config_shared', 'completed');
     
-    // Stage 6: Generation of PHP Pages (Autonomous Loop)
+    // Agent 4: Generation of PHP Pages (Developer)
     updateStageStatus('page_generation', 'active');
     setProgress(40, t('progress_generation'));
     
@@ -1708,8 +1718,7 @@ async function launchAutonomousBuild() {
     }
     log('ok', 'AI Debug toolset successfully injected to page footer modules.');
     
-    // Stage 7: Files Persistence
-    updateStageStatus('file_persistance', 'active');
+    // Files persistence (under developer)
     setProgress(75, t('progress_persistence'));
     
     let fileCount = 0;
@@ -1733,9 +1742,9 @@ async function launchAutonomousBuild() {
         log('write', `File successfully compiled: ${fname} (${saveResp.bytes} bytes saved)`);
       }
     }
-    updateStageStatus('file_persistance', 'completed');
+    updateStageStatus('page_generation', 'completed');
     
-    // Stage 8: AI QA Code Reflection & Stage 9: Self-Healing (Autoresearch-inspired Iterative QA Optimization Loop)
+    // Agent 5: AI QA Code Reflection & Self-Healing (Reviewer)
     updateStageStatus('ai_qa_reflection', 'active');
     setProgress(80, t('progress_qa'));
     
@@ -1918,14 +1927,14 @@ async function launchAutonomousBuild() {
       iteration++;
     }
     
-    // Finalize Stages 9 & 10
+    // Finalize Reviewer & Self-Healing
     document.getElementById('healingBanner').style.display = 'none';
     updateStageStatus('ai_qa_reflection', 'completed');
     updateStageStatus('self_healing', 'completed');
     
     log('ok', `Autonomous Healing Cycle finished. Final Site QA Score: ${baselineScore}/100.`);
     
-    // Stage 11: SEO Engine Robots + Sitemap Generation
+    // SEO Engine Robots + Sitemap Generation
     updateStageStatus('seo_engine', 'active');
     setProgress(95, t('progress_seo'));
     
@@ -1969,7 +1978,25 @@ Sitemap: http://\x3c?php echo \$_SERVER['HTTP_HOST']; ?\x3e/${activeProjectFolde
     log('ok', `SEO Assets (robots.txt, sitemap.xml) packaged.`);
     updateStageStatus('seo_engine', 'completed');
     
-    // Stage 12: Launch / Deployment
+    // Log experiment to results.tsv
+    const tsvLine = [
+      activeProjectFolder.replace('builds/', ''),
+      baselineScore || 0,
+      fileCount,
+      'completed',
+      `${activeSiteArchitecture.site_name} — ${activeSiteArchitecture.site_concept?.substring(0, 60)}`
+    ].join('\t') + '\n';
+    await fetch('api.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'append_file',
+        path: 'results.tsv',
+        content: tsvLine
+      })
+    }).catch(() => {});
+    
+    // Deploy & Preview
     updateStageStatus('sandbox_publish', 'active');
     setProgress(100, t('progress_sandbox'));
     
@@ -1983,11 +2010,11 @@ Sitemap: http://\x3c?php echo \$_SERVER['HTTP_HOST']; ?\x3e/${activeProjectFolde
       })
     });
     
-    log('ok', '═══════════════════════════════════════════════════════════');
-    log('ok', '🎉 DEPLOYMENT COMPLETE! LIVE PREVIEW ACTIVE');
-    log('ok', `📁 Location: ${activeProjectFolder}`);
-    log('ok', `🌐 Live URL: ${activeProjectFolder}/index.php?debug=1`);
-    log('ok', '═══════════════════════════════════════════════════════════');
+    log('ok', '�����������������������������������������������������������');
+    log('ok', '?? DEPLOYMENT COMPLETE! LIVE PREVIEW ACTIVE');
+    log('ok', `?? Location: ${activeProjectFolder}`);
+    log('ok', `?? Live URL: ${activeProjectFolder}/index.php?debug=1`);
+    log('ok', '�����������������������������������������������������������');
     
     updateStageStatus('sandbox_publish', 'completed');
     
@@ -1996,6 +2023,23 @@ Sitemap: http://\x3c?php echo \$_SERVER['HTTP_HOST']; ?\x3e/${activeProjectFolde
     
   } catch (error) {
     log('err', `FATAL PIPELINE HALT: ${error.message}`);
+    // Log failed experiment
+    const failLine = [
+      activeProjectFolder?.replace('builds/', '') || 'unknown',
+      0,
+      fileCount || 0,
+      'failed',
+      (error.message || '').substring(0, 80)
+    ].join('\t') + '\n';
+    fetch('api.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'append_file',
+        path: 'results.tsv',
+        content: failLine
+      })
+    }).catch(() => {});
     // Highlight active failed stage
     PIPELINE_STAGES.forEach(s => {
       const pill = document.getElementById(`step-${s.id}`);

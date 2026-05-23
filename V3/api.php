@@ -295,6 +295,74 @@ if ($action === 'get_stats') {
     respond(['stats' => $stats, 'chart' => $chart]);
 }
 
+// ── APPEND_FILE ───────────────────────────────────────────────────────────
+if ($action === 'append_file') {
+    $path = p('path');
+    $content = $body['content'] ?? $_POST['content'] ?? '';
+    if (!$path || !$content) err('path and content required');
+
+    $fullPath = __DIR__ . '/' . ltrim($path, '/');
+    $dir = dirname($fullPath);
+    if (!is_dir($dir)) mkdir($dir, 0777, true);
+
+    // Write header if file doesn't exist
+    if (!file_exists($fullPath)) {
+        file_put_contents($fullPath, "commit\tqa_score\tfiles\tstatus\tdescription\n", LOCK_EX);
+    }
+    file_put_contents($fullPath, $content, FILE_APPEND | LOCK_EX);
+    ok(['bytes' => strlen($content)]);
+}
+
+// ── LINT_FILE ─────────────────────────────────────────────────────────────
+if ($action === 'lint_file') {
+    $path = p('path');
+    if (!$path) err('path required');
+
+    $fullPath = __DIR__ . '/' . ltrim($path, '/');
+    if (!file_exists($fullPath)) err('File not found');
+
+    $content = file_get_contents($fullPath);
+    $syntax_ok = true;
+    $message = 'OK';
+
+    // PHP syntax check
+    if (pathinfo($fullPath, PATHINFO_EXTENSION) === 'php') {
+        $tmpFile = tempnam(sys_get_temp_dir(), 'lint_') . '.php';
+        file_put_contents($tmpFile, $content);
+        exec('php -l "' . $tmpFile . '" 2>&1', $output, $retCode);
+        unlink($tmpFile);
+        if ($retCode !== 0) {
+            $syntax_ok = false;
+            $message = implode("\n", $output);
+        }
+    }
+
+    // Basic JS syntax check via Node
+    if (pathinfo($fullPath, PATHINFO_EXTENSION) === 'js') {
+        $tmpFile = tempnam(sys_get_temp_dir(), 'lint_') . '.js';
+        file_put_contents($tmpFile, $content);
+        exec('node --check "' . $tmpFile . '" 2>&1', $output, $retCode);
+        unlink($tmpFile);
+        if ($retCode !== 0) {
+            $syntax_ok = false;
+            $message = implode("\n", $output);
+        }
+    }
+
+    // Check HTML basics
+    if (in_array(pathinfo($fullPath, PATHINFO_EXTENSION), ['html', 'php'])) {
+        if (!str_contains($content, '</body>')) {
+            $syntax_ok = false;
+            $message = 'Missing closing </body> tag';
+        }
+    }
+
+    respond([
+        'syntax_ok' => $syntax_ok,
+        'message' => $message
+    ]);
+}
+
 // ── Unknown action ────────────────────────────────────────────────────────
 err('Unknown action: ' . htmlspecialchars($action));
 
