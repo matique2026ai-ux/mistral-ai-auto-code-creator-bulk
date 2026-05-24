@@ -17,6 +17,7 @@ class PipelineEngine {
     private array $state = [];
 
     public function __construct() {
+        ini_set('memory_limit', '512M');
         $this->db = getDB();
     }
 
@@ -45,16 +46,16 @@ class PipelineEngine {
                 'Authorization: Bearer ' . $this->currentKey,
                 'Content-Type: application/json',
             ],
-            CURLOPT_POSTFIELDS => json_encode($payload),
+            CURLOPT_POSTFIELDS => json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE),
         ]);
         $resp = curl_exec($ch);
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
         if ($code !== 200) {
+            $this->log('err', "HTTP $code - " . ($resp ? substr($resp, 0, 300) : 'empty') . " (depth $depth)");
             markKeyError($this->db, $this->currentKeyId);
             if ($depth >= 3) throw new Exception("API HTTP $code après $depth tentatives ($step)");
-            $this->log('err', "HTTP $code - key rotated (depth $depth)");
             return $this->callAI($messages, $maxTokens, $jsonMode, $step, $depth + 1);
         }
 
@@ -214,7 +215,7 @@ class PipelineEngine {
             'designer' => $this->runJobStepDesigner($brief, $stackDecision, $architecture),
             'backend' => $this->runJobStepBackend($brief, $stackDecision, $architecture, $designSystem),
             'frontend' => $this->runJobStepFrontend($brief, $stackDecision, $architecture, $designSystem),
-            'qa' => $this->runJobStepQA($brief, $stackDecision, $project),
+            'qa' => $this->runJobStepQA($brief, $stackDecision, $project, $architecture, $designSystem),
             'devops' => $this->runJobStepDevOps($brief, $stackDecision, $architecture),
             default => throw new \Exception("Unknown job: $jobName"),
         };
@@ -272,15 +273,44 @@ class PipelineEngine {
         return $result;
     }
 
-    private function runJobStepQA(array $brief, array $stackDecision, array $project): array {
-        $this->progress(75, 'QA Engineer : Inspection + Build + Correction (max 3 itérations)...');
+    private function runJobStepQA(array $brief, array $stackDecision, array $project, array $architecture = [], array $designSystem = []): array {
+        $this->progress(75, 'QA Engineer : Inspection + Build + Correction...');
         $this->log('test', 'Agent QA : Validation du code avec boucle de correction...');
         $buildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($this->projectFolder);
         $existing = $this->scanFiles($buildDir);
         $qaResult = $this->qaFixLoop($brief, $stackDecision, $existing);
         $score = $qaResult['overall_score'] ?? 0;
+
+        // If QA score < 95 but build compiles, re-run backend+frontend with QA issues as context
+        $maxRepairIterations = 3;
+        for ($repair = 0; $repair < $maxRepairIterations; $repair++) {
+            if ($score >= 95) break;
+
+            $buildErrors = $qaResult['build_errors'] ?? [];
+            $issues = $qaResult['issues'] ?? [];
+            if (empty($buildErrors) && empty($issues)) break;
+
+            $this->log('sys', "🔧 Réparation #" . ($repair + 1) . ": réinjection des " . count($issues) . " issues dans les agents...");
+
+            $errorContext = json_encode(['build_errors' => $buildErrors, 'qa_issues' => $issues]);
+
+            // Re-run backend if there are backend-related files (src/ directory)
+            if (!empty($architecture)) {
+                $backendResult = $this->runBackend($brief, $stackDecision, $architecture, $designSystem);
+                foreach (($backendResult['files'] ?? []) as $f) $this->writeFile($f['filename'], $f['content']);
+            }
+
+            // Re-run frontend  
+            $feResult = $this->runFrontend($brief, $stackDecision, $architecture, $designSystem, ['files' => []]);
+            foreach (($feResult['files'] ?? []) as $f) $this->writeFile($f['filename'], $f['content']);
+
+            $existing = $this->scanFiles($buildDir);
+            $qaResult = $this->qaFixLoop($brief, $stackDecision, $existing);
+            $score = $qaResult['overall_score'] ?? 0;
+        }
+
         updateProject($this->db, $this->projectId, ['qa_score' => $score, 'build_validated' => ($qaResult['build_success'] ?? false) ? 1 : 0]);
-        $this->log('test', "Score qualité : $score/100 (itérations : " . ($qaResult['iterations'] ?? 1) . ")");
+        $this->log('test', "Score qualité final : $score/100");
         return $qaResult;
     }
 
@@ -850,11 +880,15 @@ class PipelineEngine {
         foreach ($allFiles as $f) {
             $fn = $f['filename'] ?? 'unknown';
             if ($fn === '_build_errors.json') continue;
+            $content = $f['content'] ?? '';
+            if (strlen($content) > 2000) {
+                $content = substr($content, 0, 2000) . "\n\n... [truncated, total " . strlen($content) . " chars]";
+            }
             $filesSummary[] = [
                 'filename' => $fn,
                 'language' => $f['language'] ?? 'unknown',
                 'size' => strlen($f['content'] ?? ''),
-                'content' => $f['content'] ?? '',
+                'content' => $content,
             ];
         }
 
@@ -864,9 +898,13 @@ class PipelineEngine {
             'files' => $filesSummary,
         ]);
 
+        $qaJson = json_encode($qaContent, JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_UNICODE);
+        if ($qaJson === false) {
+            $qaJson = json_encode(['error' => 'Échec encodage QA', 'files' => count($allFiles)], JSON_INVALID_UTF8_SUBSTITUTE);
+        }
         $messages = [
             ['role' => 'system', 'content' => $prompt],
-            ['role' => 'user', 'content' => json_encode($qaContent)],
+            ['role' => 'user', 'content' => $qaJson],
         ];
         $res = $this->callWithRetry($messages, 16000, true, 'qa');
         $this->storeAgentMemory('qa', 'Score: ' . ($res['score'] ?? 'N/A') . ', Problèmes: ' . count($res['issues'] ?? []), json_encode(array_slice($res['issues'] ?? [], 0, 3)));
@@ -1134,90 +1172,41 @@ class PipelineEngine {
     // ═══════════════════════════════════════════════════════════════════
 
     private function qaFixLoop(array $brief, array $stackDecision, array $allFiles): array {
-        $currentFiles = $allFiles;
-        $allBuildErrors = [];
-        $finalScore = 0;
-        $finalIssues = [];
-        $finalFixes = [];
-        $lastScore = 0;
-        $stagnantIterations = 0;
-        $stuckScore = 0;
-        $consecutiveSameScore = 0;
         $buildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($this->projectFolder);
 
-        // Log header
-        $this->writeFile('_experiments.log', "iteration\tscore\tbuild_ok\timport_ok\tdescription\n");
+        $this->log('sys', "═══ QA Inspection ═══");
+        $qaResult = $this->runQA($brief, $stackDecision, $allFiles);
+        $score = $qaResult['overall_score'] ?? 0;
+        $issues = $qaResult['issues'] ?? [];
 
-        for ($iteration = 0; $iteration < 10; $iteration++) {
-            $this->log('sys', "═══ QA Itération " . ($iteration + 1) . "/10 ═══");
+        $this->log('test', "Score : $score/100 — " . count($issues) . " problèmes");
 
-            $qaResult = $this->runQA($brief, $stackDecision, $currentFiles);
-            $score = $qaResult['overall_score'] ?? 0;
-            $issues = $qaResult['issues'] ?? [];
-            $finalScore = $score;
-            $finalIssues = $issues;
+        $currentFiles = $this->scanFiles($buildDir);
+        $importErrors = $this->validateFileImports($currentFiles);
+        $buildResult = $this->runBuildValidation($stackDecision);
 
-            $this->log('test', "Score : $score/100 — " . count($issues) . " problèmes");
-
-            $currentFiles = $this->scanFiles($buildDir);
-            $importErrors = $this->validateFileImports($currentFiles);
-            $buildResult = $this->runBuildValidation($stackDecision);
-            $buildOk = $buildResult['success'] ? 1 : 0;
-            $importOk = empty($importErrors) ? 1 : 0;
-
-            $desc = substr(json_encode(array_slice($issues, 0, 1)), 0, 100);
-            $this->appendToFile('_experiments.log', "$iteration\t$score\t$buildOk\t$importOk\t$desc\n");
-
-            if ($buildOk && $importOk && $score >= 95) {
-                $this->log('ok', '✅ Score 95+ atteint, build OK');
-                break;
-            }
-
-            if ($score === $stuckScore) {
-                $consecutiveSameScore++;
-            } else {
-                $consecutiveSameScore = 0;
-                $stuckScore = $score;
-            }
-
-            if ($consecutiveSameScore >= 3) {
-                $this->log('warn', "⚠ Score bloqué à $score après 3 itérations — les problèmes sont structurels (composants manquants), arrêt du loop.");
-                break;
-            }
-
-            if ($score < $lastScore) $stagnantIterations++;
-            $lastScore = $score;
-
-            $errorSummary = [];
-            foreach (($buildResult['errors'] ?? []) as $be) {
-                $errorSummary[] = "[{$be['command']}] {$be['output']}";
-            }
-            foreach ($importErrors as $ie) {
-                $errorSummary[] = "[import] {$ie['file']}: {$ie['issue']}";
-            }
-            $allBuildErrors = $errorSummary;
-
-            $this->log('sys', "🔄 Retour des erreurs aux agents...");
-            $this->writeFile('_build_errors.json', json_encode([
-                'build_errors' => $allBuildErrors,
-                'issues' => $issues,
-                'iteration' => $iteration + 1,
-            ], JSON_PRETTY_PRINT));
-            $currentFiles = $this->scanFiles($buildDir);
+        $errorSummary = [];
+        foreach (($buildResult['errors'] ?? []) as $be) {
+            $errorSummary[] = "[{$be['command']}] {$be['output']}";
+        }
+        foreach ($importErrors as $ie) {
+            $errorSummary[] = "[import] {$ie['file']}: {$ie['issue']}";
         }
 
-        foreach (['_build_errors.json', '_stagnation.json'] as $tf) {
-            $fp = $buildDir . DIRECTORY_SEPARATOR . $tf;
-            if (file_exists($fp)) unlink($fp);
-        }
+        $this->writeFile('_build_errors.json', json_encode([
+            'build_errors' => $errorSummary,
+            'issues' => $issues,
+            'score' => $score,
+        ], JSON_PRETTY_PRINT));
+
+        $this->log('sys', "→ Build: " . ($buildResult['success'] ? 'OK' : 'Échec') . " | Imports: " . (empty($importErrors) ? 'OK' : count($importErrors) . ' erreurs'));
 
         return [
-            'overall_score' => $finalScore,
-            'issues' => $finalIssues,
+            'overall_score' => $score,
+            'issues' => $issues,
             'fixes' => [],
-            'build_errors' => $allBuildErrors,
-            'iterations' => $iteration + 1,
-            'build_success' => empty(array_filter($buildResult['errors'] ?? [], fn($e) => $e['severity'] === 'error')),
+            'build_errors' => $errorSummary,
+            'build_success' => $buildResult['success'] && empty($importErrors),
         ];
     }
 

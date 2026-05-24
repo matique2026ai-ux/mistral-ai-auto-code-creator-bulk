@@ -76,3 +76,5 @@ V4/akrourcoder_v4.sqlite
 V4/builds/
 
 ```
+V4/akrourcoder_v4.sqlite-shm
+V4/akrourcoder_v4.sqlite-wal
