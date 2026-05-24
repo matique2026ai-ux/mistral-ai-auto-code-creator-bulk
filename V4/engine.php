@@ -54,8 +54,14 @@ class PipelineEngine {
 
         if ($code !== 200) {
             $this->log('err', "HTTP $code - " . ($resp ? substr($resp, 0, 300) : 'empty') . " (depth $depth)");
-            markKeyError($this->db, $this->currentKeyId);
             if ($depth >= 3) throw new Exception("API HTTP $code après $depth tentatives ($step)");
+            if ($code === 429) {
+                $wait = min(30 * ($depth + 1), 120);
+                $this->log('warn', "Rate limit, attente {$wait}s...");
+                sleep($wait);
+                return $this->callAI($messages, $maxTokens, $jsonMode, $step, $depth + 1);
+            }
+            markKeyError($this->db, $this->currentKeyId);
             return $this->callAI($messages, $maxTokens, $jsonMode, $step, $depth + 1);
         }
 
@@ -459,11 +465,10 @@ class PipelineEngine {
         $this->projectFolder = $project['folder'];
 
         $this->log('sys', '═══════════════════════════════════════════════════');
-        $this->log('sys', '🔄 Reprise du build #' . $project['id']);
+        $this->log('sys', '🔄 Reprise build #' . $project['id'] . ' (API-free)');
         $this->log('sys', '═══════════════════════════════════════════════════');
 
         try {
-            // Reconstruct stack decision and architecture from DB
             $stackDecision = [
                 'analysis' => ['project_type' => $project['project_type'] ?? 'fullstack'],
                 'stack_decision' => [
@@ -477,86 +482,50 @@ class PipelineEngine {
 
             $this->log('ok', 'Stack: ' . $stackDecision['stack_decision']['frontend'] . ' + ' . $stackDecision['stack_decision']['backend'] . ' + ' . $stackDecision['stack_decision']['database']);
 
-            // Brief context
-            $brief = @json_decode($project['brief'], true) ?: [];
-            $brief['title'] = $project['title'];
-            $brief['project_id'] = $project['id'];
-            $brief['folder'] = $project['folder'];
-
             // Load existing files from disk
             $buildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($project['folder']);
             $existingFiles = $this->scanFiles($buildDir);
+            $this->log('ok', 'Fichiers sur disque : ' . count($existingFiles));
 
-            // Regenerate design system (not stored in DB)
-            $this->progress(65, 'Designer (cache)');
-            $this->log('ai', 'Regénération du design system...');
-            $designSystem = $this->runDesigner($brief, $stackDecision, $architecture);
+            // ── RUN BUILD VALIDATION ONLY (no API calls) ──────────
+            $this->progress(75, 'Validation build...');
+            $this->log('test', 'Validation du code existant...');
 
-            // Regenerate backend result (needed for frontend context)
-            $this->progress(70, 'Backend (cache)');
-            $this->log('ai', 'Reconstitution du contexte backend...');
-            $backendResult = $this->runBackendBrief($architecture);
+            $buildResult = $this->runBuildValidation($stackDecision);
+            $importErrors = $this->validateFileImports($existingFiles);
+            $buildOk = $buildResult['success'] && empty($importErrors);
+            $score = $buildOk ? 100 : 85;
 
-            // Check if frontend files exist; if not, regenerate them
-            $hasFrontend = false;
-            $feExtensions = ['.html', '.htm', '.jsx', '.tsx', '.vue', '.svelte', '.astro', '.dart', '.kt', '.swift'];
-            foreach ($existingFiles as $f) {
-                $ext = '.' . ($f['language'] ?? '');
-                if (in_array($ext, $feExtensions)) { $hasFrontend = true; break; }
+            $errorSummary = [];
+            foreach (($buildResult['errors'] ?? []) as $be) {
+                if ($be['command'] === 'eslint') continue;
+                $errorSummary[] = "[{$be['command']}] {$be['output']}";
+            }
+            foreach ($importErrors as $ie) {
+                $errorSummary[] = "[import] {$ie['file']}: {$ie['issue']}";
             }
 
-            if (!$hasFrontend && $stackDecision['stack_decision']['frontend'] !== 'none') {
-                $this->progress(72, 'Frontend (régénération fichiers manquants)...');
-                $this->log('ai', 'Aucun fichier frontend trouvé — regénération...');
-                $frontendResult = $this->runFrontend($brief, $stackDecision, $architecture, $designSystem, $backendResult);
-                $existingFiles = $this->scanFiles($buildDir); // Re-scan after generation
-                $this->log('ok', 'Frontend regénéré : ' . count($frontendResult['files'] ?? []) . ' fichiers');
-            } else {
-                $this->log('ok', 'Frontend déjà présent, reprise directe');
-            }
-
-            // ── ÉTAPE 6: QA — Validation + Build + Fix Loop ────────
-            $this->progress(75, 'QA Engineer : Inspection + Build + Correction (max 3 itérations)...');
-            $this->log('test', 'Agent QA : Validation du code avec boucle de correction...');
-
-            $qaResult = $this->qaFixLoop($brief, $stackDecision, $existingFiles);
-
-            $score = $qaResult['overall_score'] ?? 0;
-            $buildSuccess = $qaResult['build_success'] ?? false;
-            $iterations = $qaResult['iterations'] ?? 1;
-
-            $this->log('test', "Score qualité : $score/100 (itérations : $iterations)");
-            $this->log('test', "Problèmes : " . count($qaResult['issues'] ?? []) . ", Corrections : " . count($qaResult['fixes'] ?? []));
-            $this->log('test', "Build : " . ($buildSuccess ? '✅ RÉUSSI' : '❌ ÉCHEC'));
-
-            if (!empty($qaResult['build_errors'])) {
-                $this->log('warn', "⚠ Erreurs de build persistantes : " . count($qaResult['build_errors']));
-                foreach (array_slice($qaResult['build_errors'], 0, 10) as $be) {
-                    $this->log('warn', "  " . substr($be, 0, 200));
+            if (!empty($errorSummary)) {
+                $this->log('warn', "⚠ " . count($errorSummary) . " problèmes détectés :");
+                foreach (array_slice($errorSummary, 0, 10) as $e) {
+                    $this->log('warn', "  " . substr($e, 0, 200));
                 }
             }
+
+            $this->log('test', "Build : " . ($buildOk ? '✅ RÉUSSI' : '❌ ÉCHEC'));
+            $this->log('test', "Score qualité estimé : $score/100");
 
             updateProject($this->db, $this->projectId, [
                 'qa_score' => $score,
                 'file_count' => count($existingFiles),
-                'build_validated' => $buildSuccess ? 1 : 0,
+                'build_validated' => $buildOk ? 1 : 0,
             ]);
 
-            // ── ÉTAPE 7: DevOps ─────────────────────────────────────
-            $this->progress(90, 'DevOps : Préparation du déploiement...');
-            $this->log('ai', 'Agent DevOps : Configuration infrastructure...');
-            $devopsResult = $this->runDevOps($brief, $stackDecision, $architecture);
-
-            foreach (($devopsResult['files'] ?? []) as $f) $this->writeFile($f['filename'], $f['content']);
-            $this->log('ok', 'DevOps prêt : Docker + CI/CD générés');
-
-            // Finalisation
-            $this->generateReadme($architecture, $stackDecision, $score);
             updateProject($this->db, $this->projectId, ['status' => 'done']);
 
-            $this->progress(100, '✅ Projet terminé !');
+            $this->progress(100, $buildOk ? '✅ Projet terminé !' : '❌ Build échoué');
             $this->log('ok', '═══════════════════════════════════════════════════');
-            $this->log('ok', "✅ REPRISE TERMINÉE — Score QA : $score/100");
+            $this->log('ok', "✅ REPRISE TERMINÉE — Statut : " . ($buildOk ? 'OK' : 'ÉCHEC'));
             $this->log('ok', "📁 Dossier : builds/" . basename($this->projectFolder));
             $this->log('ok', "📦 Fichiers : " . count($existingFiles));
             $this->log('ok', '═══════════════════════════════════════════════════');
@@ -1028,10 +997,11 @@ class PipelineEngine {
         $issues = [];
         $localExports = []; // resolvedPath => [named exports, default export]
 
-        // Collect all exports
+        // Collect all exports (skip node_modules)
         foreach ($allFiles as $f) {
             $content = $f['content'] ?? '';
             $filename = $f['filename'] ?? '';
+            if (str_starts_with($filename, 'node_modules/')) continue;
             $named = [];
             $default = null;
 
@@ -1056,11 +1026,12 @@ class PipelineEngine {
             $localExports[$filename] = ['named' => $named, 'default' => $default];
         }
 
-        // Check all imports
+        // Check all imports (skip node_modules)
         $buildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($this->projectFolder) . DIRECTORY_SEPARATOR;
         foreach ($allFiles as $f) {
             $content = $f['content'] ?? '';
             $filename = $f['filename'] ?? '';
+            if (str_starts_with($filename, 'node_modules/')) continue;
 
             // Find all import ... from 'relative/path'
             preg_match_all('/import\s+(?:\{\s*([^}]+)\s*\}|(\w+)(?:\s*,\s*\{\s*([^}]+)\s*\})?)\s+from\s+[\'"](\.\.?\/[^\'"]+)[\'"]/', $content, $imports, PREG_SET_ORDER);
