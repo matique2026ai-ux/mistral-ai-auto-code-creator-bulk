@@ -13,6 +13,11 @@ class AIModel {
     private string $model = 'devstral-2512';
     private string $currentKey = '';
     private int $currentKeyId = 0;
+    private int $projectId = 0;
+
+    public function setProjectId(int $id): void {
+        $this->projectId = $id;
+    }
 
     private const PROVIDERS_CFG = null; // loaded from config
 
@@ -67,7 +72,7 @@ class AIModel {
                 $result = $this->callProvider($provName, $url, $provCfg['headers'], $key['key_val'], $useModel, $messages, $tokens, $jsonMode);
                 // Record token usage
                 $tokensUsed = $result['tokens'] ?? 0;
-                recordTokens($this->db, $key['id'], $tokensUsed, 0, $step);
+                recordTokens($this->db, $key['id'], $tokensUsed, $this->projectId, $step);
                 $this->log("ok", "{$provName}/{$useModel} — {$tokensUsed} tokens");
                 return $result;
             } catch (\Exception $e) {

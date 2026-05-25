@@ -6,82 +6,33 @@
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/models.php';
 
 class PipelineEngine {
     private PDO $db;
+    private AIModel $ai;
     private int $projectId;
     private string $projectFolder;
-    private string $currentKey = '';
-    private int $currentKeyId = 0;
     private array $generatedFiles = [];
-    private array $state = [];
     private array $searchCache = [];
 
     public function __construct() {
         ini_set('memory_limit', '512M');
         $this->db = getDB();
+        $this->ai = new AIModel();
     }
 
-    // ─── API Mistral ──────────────────────────────────────────────────
+    // ─── API Multi-Provider (via AIModel router) ─────────────────────
 
     private function callAI(array $messages, int $maxTokens = 4000, bool $jsonMode = true, string $step = '', int $depth = 0): array {
-        $key = $this->getKey();
-        $agentMap = json_decode(AC4_AGENT_MODEL_MAP, true);
-        $model = ($agentMap[$step]['model'] ?? false) ?: AC4_MODEL;
-        $payload = [
-            'model' => $model,
-            'messages' => $messages,
-            'max_tokens' => $maxTokens,
-        ];
-        if ($jsonMode) $payload['response_format'] = ['type' => 'json_object'];
-
-        $ch = curl_init(AC4_API_URL);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST => true,
-            CURLOPT_TIMEOUT => 300,
-            CURLOPT_CONNECTTIMEOUT => 30,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => 0,
-            CURLOPT_HTTPHEADER => [
-                'Authorization: Bearer ' . $this->currentKey,
-                'Content-Type: application/json',
-            ],
-            CURLOPT_POSTFIELDS => json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE),
-        ]);
-        $resp = curl_exec($ch);
-        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($code !== 200) {
-            $this->log('err', "HTTP $code - " . ($resp ? substr($resp, 0, 300) : 'empty') . " (depth $depth)");
-            if ($depth >= 3) throw new Exception("API HTTP $code après $depth tentatives ($step)");
-            if ($code === 429) {
-                $wait = min(30 * ($depth + 1), 120);
-                $this->log('warn', "Rate limit, attente {$wait}s...");
-                sleep($wait);
-                return $this->callAI($messages, $maxTokens, $jsonMode, $step, $depth + 1);
-            }
-            markKeyError($this->db, $this->currentKeyId);
+        try {
+            return $this->ai->call($messages, $maxTokens, $jsonMode, $step);
+        } catch (\Exception $e) {
+            $this->log('err', "AI $step failed (depth $depth): " . $e->getMessage());
+            if ($depth >= 3) throw $e;
+            $this->log('warn', "Retry $step (depth " . ($depth + 1) . ")");
             return $this->callAI($messages, $maxTokens, $jsonMode, $step, $depth + 1);
         }
-
-        $data = json_decode($resp, true);
-        $tokens = $data['usage']['total_tokens'] ?? 0;
-        recordTokens($this->db, $this->currentKeyId, $tokens, $this->projectId, $step);
-
-        return [
-            'content' => $data['choices'][0]['message']['content'],
-            'tokens' => $tokens,
-        ];
-    }
-
-    private function getKey(): array {
-        $k = getNextApiKey($this->db);
-        if (!$k) throw new Exception('Aucune clé API disponible');
-        $this->currentKey = $k['key_val'];
-        $this->currentKeyId = $k['id'];
-        return $k;
     }
 
     // ─── Logging ──────────────────────────────────────────────────────
@@ -195,6 +146,7 @@ class PipelineEngine {
 
     public function runJob(int $projectId, string $jobName): array {
         $this->projectId = $projectId;
+        $this->ai->setProjectId($projectId);
         $stmt = $this->db->prepare("SELECT * FROM projects WHERE id = ?"); $stmt->execute([$projectId]);
         $project = $stmt->fetch();
         if (!$project) throw new \Exception("Project #$projectId not found");
@@ -342,6 +294,7 @@ class PipelineEngine {
 
     public function run(array $brief): array {
         $this->projectId = $brief['project_id'];
+        $this->ai->setProjectId($this->projectId);
         $this->projectFolder = $brief['folder'];
 
         $this->log('sys', '═══════════════════════════════════════════════════');
@@ -476,6 +429,7 @@ class PipelineEngine {
 
     public function resume(array $project): array {
         $this->projectId = $project['id'];
+        $this->ai->setProjectId($this->projectId);
         $this->projectFolder = $project['folder'];
 
         $this->log('sys', '═══════════════════════════════════════════════════');

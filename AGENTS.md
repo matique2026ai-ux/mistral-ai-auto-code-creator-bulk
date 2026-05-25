@@ -117,31 +117,22 @@ Le QA loop injecte les issues détectées comme `$brief['qa_feedback']` dans les
 
 ## Dernier commit
 
-**V4.11** — `HEAD` — Fix QA loop, cache web search, cleanup API, tests, file_count
+**V4.12** — `HEAD` — Refactor engine → AIModel multi-provider, token tracking fix
 
-### Correctifs bugs
-- **Bug critique** : `logBuild()` inexistante dans `background_build.php` → remplacé par `appendLog()` (fatal error en build)
-- **Bug critique** : Boucle QA ne servait à rien — `$errorContext` était créé puis **jamais passé** aux agents backend/frontend. Maintenant injecté via `$brief['qa_feedback']`.
-- **Bug** : `run()` principal n'avait pas de boucle de réparation QA (existait seulement dans `runJobStepQA()`)
-- **4 injections SQL** dans `api.php` → requêtes préparées
-- **file_count gonflé** : `scanFiles()` incluait `node_modules/` (20111 fichiers) + `.next/` (3694 fichiers). Maintenant filtré. Projet #7 : 11299 → 44 fichiers (-99.6%)
-- **Requêtes DuckDuckGo redondantes** : le frontend faisait 5 appels identiques. Maintenant caché en mémoire par build.
+### Refactoring majeur
+- **`PipelineEngine::callAI()` réécrite** : ne fait plus d'appel curl direct vers Mistral. Délègue maintenant à `AIModel::call()` (`models.php`), activant le **fallback multi-provider** (Mistral → OpenAI → Claude → Gemini) pour chaque appel d'agent.
+- **Routeur `AIModel` désormais vivant** : la classe `AIModel` n'était **jamais instanciée** nulle part — tout le code de fallback, rotation de clés et stats par provider était mort depuis V4.0. Maintenant injecté dans `PipelineEngine` et utilisé pour chaque étape du pipeline.
+- **Code mort supprimé** : propriétés `$currentKey`, `$currentKeyId` et méthode `getKey()` retirées de `PipelineEngine` (gérées par `AIModel`).
+- **Token tracking corrigé** : `AIModel::call()` enregistrait les tokens avec `project_id=0`. Ajout d'un setter `AIModel::setProjectId()` → les 3 points d'entrée (`run()`, `runJob()`, `resume()`) synchronisent le project ID.
 
-### Améliorations
-- Dashboard enrichi : builds validés (✔), failed, en cours, fichiers totaux
-- Endpoint API `/cleanup` + bouton UI : supprime vieux builds >30 jours + dossiers orphelins
-- `getGlobalStats()` enrichi : `builds_validated`, `projects_failed`, `projects_building`, `total_files`
-- 36 tests unitaires répartis en 4 suites, master runner `php tests/all.php`
-
-### Fichiers impactés (V4.11)
+### Fichiers impactés (V4.12)
 | Fichier | Changements |
 |---------|-------------|
-| `engine.php` | Fix QA loop injection, ajout boucle repair dans run(), cache web search + scanFiles filtre |
-| `api.php` | 4 SQLi → préparées, endpoint cleanup, SQLi get_logs fixé |
-| `index.php` | Dashboard enrichi (validated, files), bouton cleanup |
-| `db.php` | Stats enrichies, migration |
-| `background_build.php` | logBuild → appendLog, SQLi fixé |
-| `tests/*` | Nouveau : framework.php, test_queue.php, test_db.php, test_config.php, all.php |
+| `engine.php` | callAI() → délègue à AIModel::call(), plus de curl direct, getKey() retiré |
+| `models.php` | setProjectId() ajouté, recordTokens() utilise le bon project_id |
+
+### Correctifs bugs
+- **Bug potentiel** : toute la couche multi-provider était du code mort. Maintenant connectée et fonctionnelle.
 
 ---
 
