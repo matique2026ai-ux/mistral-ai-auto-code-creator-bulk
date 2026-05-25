@@ -117,22 +117,19 @@ Le QA loop injecte les issues détectées comme `$brief['qa_feedback']` dans les
 
 ## Dernier commit
 
-**V4.14** — `HEAD` — Fix showstopper provider column + double-execute worker + QA config files
+**V4.15** — `HEAD` — Worker daemon robuste (auto-scan + graceful shutdown)
 
-### Correctifs bugs (audit engine)
-- **SHOWSTOPPER** : la table `api_keys` n'avait pas de colonne `provider`. `AIModel::getProviderKey()` exécutait `SELECT ... WHERE provider = ?` → erreur SQL "no such column" sur le premier appel IA. Tous les builds échouaient silencieusement après V4.12.
-  - Migration ajoutée dans `migrateDB()` : `ALTER TABLE api_keys ADD COLUMN provider TEXT DEFAULT 'mistral'`
-  - `getProviderKey()` rattrapé : si la colonne n'existe pas encore (base ancienne), fallback sur `getNextApiKey()` sans crash
-- **SHOWSTOPPER** : `worker.php` doublait chaque job sur Windows (`launchWorkerChild()` exécutait le job **et** retournait `null`, ce qui déclenchait une seconde exécution dans la branche `else` de l'appelant). Suppression de `executeJobSync()` dans la branche Windows.
-- **Bug** : la boucle de réparation QA dans `run()` perdait les fichiers de configuration et les fichiers précédents. `$allFiles` était recréé depuis `$reBackend['files']` + `$reFrontend['files']` uniquement. Remplacé par `scanFiles()` qui lit tous les fichiers du disque.
+### Améliorations
+- **Mode daemon amélioré** : `php worker.php --daemon` sans project_id scanne automatiquement tous les projets en statut `building` dans la base, les exécute en séquence
+- **Graceful shutdown** : SIGINT/SIGTERM (Ctrl+C) proprement gérés sur Unix
+- **Boucle infinie** : plus de limite à 180 polls, tourne jusqu'à SIGINT
+- **Usage flexible** : `php worker.php <project_id>` (once), `php worker.php <project_id> --daemon` (projet spécifique), `php worker.php --daemon` (auto-scan)
+- **Logs horodatés** : daemon log toutes les 30 secondes qu'il attend
 
-### Fichiers impactés (V4.14)
+### Fichiers impactés (V4.15)
 | Fichier | Changements |
 |---------|-------------|
-| `db.php` | `provider` colonne ajoutée à `api_keys` (CREATE + ALTER migration) |
-| `models.php` | `getProviderKey()` fallback si colonne manquante |
-| `worker.php` | Retiré `executeJobSync()` dans `launchWorkerChild()` Windows |
-| `engine.php` | Repair loop utilise `scanFiles()` au lieu de merge manuel |
+| `worker.php` | runDaemon() refactoré, getNextPendingProject(), signals |
 
 ---
 

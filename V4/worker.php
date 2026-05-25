@@ -15,29 +15,63 @@ require_once __DIR__ . '/engine.php';
 require_once __DIR__ . '/queue.php';
 
 // Only run if executed directly (not when included)
-if (isset($argv[1]) && basename($argv[0] ?? '') === 'worker.php') {
-    $projectId = (int)($argv[1]);
-    if (!$projectId) { fwrite(STDERR, "Usage: php worker.php <project_id> [--daemon]\n"); exit(1); }
-
+if (basename($argv[0] ?? '') === 'worker.php') {
     $isDaemon = in_array('--daemon', $argv ?? []);
+    $projectId = isset($argv[1]) && ctype_digit($argv[1]) ? (int)$argv[1] : 0;
+
+    if ($isDaemon) {
+        runDaemon($projectId);
+    } elseif ($projectId) {
+        $queue = new JobQueue();
+        runWorkerLoop($projectId, $queue, 'worker_once', 2);
+    } else {
+        fwrite(STDERR, "Usage: php worker.php [project_id] [--daemon]\n"); exit(1);
+    }
+}
+
+function runDaemon(int $projectId = 0): void {
+    $workerId = 'daemon_' . uniqid();
+    fwrite(STDERR, "[daemon:$workerId] Starting" . ($projectId ? " for project #$projectId" : " (auto-scan)") . "\n");
+
+    if (PHP_OS_FAMILY !== 'Windows') {
+        pcntl_signal(SIGINT, fn() => die("\n[daemon] Shutdown by SIGINT\n"));
+        pcntl_signal(SIGTERM, fn() => die("\n[daemon] Shutdown by SIGTERM\n"));
+    }
+
     $db = getDB();
     $queue = new JobQueue();
-    $workerId = 'worker_' . uniqid();
-    $maxParallel = 2;
+    $loopCount = 0;
 
-    if (!$isDaemon) {
-        runWorkerLoop($projectId, $queue, $workerId, $maxParallel);
-    } else {
-        fwrite(STDERR, "[worker:$workerId] Daemon started for project #$projectId\n");
-        $maxPolls = 180;
-        $pollCount = 0;
-        while ($pollCount++ < $maxPolls) {
-            $done = runWorkerLoop($projectId, $queue, $workerId, $maxParallel);
-            if ($done) break;
-            sleep(2);
+    while (true) {
+        if (PHP_OS_FAMILY !== 'Windows') pcntl_signal_dispatch();
+
+        $targetId = $projectId ?: getNextPendingProject($db);
+
+        if ($targetId) {
+            fwrite(STDERR, "[daemon] Processing project #$targetId...\n");
+            try {
+                runWorkerLoop($targetId, $queue, $workerId, 2);
+                fwrite(STDERR, "[daemon] Project #$targetId done\n");
+            } catch (\Throwable $e) {
+                fwrite(STDERR, "[daemon] Project #$targetId failed: {$e->getMessage()}\n");
+            }
+            if ($projectId) break; // Single-project daemon exits after completion
+        } else {
+            if (++$loopCount % 30 === 0) {
+                fwrite(STDERR, "[daemon] Waiting for projects... ({$loopCount}s)\n");
+            }
         }
-        fwrite(STDERR, "[worker:$workerId] Daemon finished\n");
+        sleep(1);
     }
+}
+
+function getNextPendingProject(PDO $db): ?int {
+    $stmt = $db->query(
+        "SELECT id FROM projects WHERE status = 'building'
+         ORDER BY created_at ASC LIMIT 1"
+    );
+    $row = $stmt->fetch();
+    return $row ? (int)$row['id'] : null;
 }
 
 function runWorkerLoop(int $projectId, JobQueue $queue, string $workerId, int $maxParallel): bool {
