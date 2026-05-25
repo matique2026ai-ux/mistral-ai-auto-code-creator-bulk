@@ -406,22 +406,33 @@ textarea { resize: vertical; min-height: 60px; font-size: .82rem; }
         <div class="card" style="margin-bottom:14px;">
           <div class="card-title">📊 Statistiques</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-            <div style="padding:12px;background:var(--bg);border-radius:var(--radius-sm);text-align:center;">
-              <div style="font-size:1.4rem;font-weight:800;color:var(--primary)" id="statKeys">0</div>
-              <div style="font-size:.65rem;color:var(--text-3);">Clés</div>
+            <div style="padding:10px;background:var(--bg);border-radius:var(--radius-sm);text-align:center;">
+              <div style="font-size:1.2rem;font-weight:800;color:var(--primary)" id="statKeys">0</div>
+              <div style="font-size:.6rem;color:var(--text-3);">Clés actives</div>
             </div>
-            <div style="padding:12px;background:var(--bg);border-radius:var(--radius-sm);text-align:center;">
-              <div style="font-size:1.4rem;font-weight:800;color:var(--accent)" id="statTokens">0</div>
-              <div style="font-size:.65rem;color:var(--text-3);">Tokens</div>
+            <div style="padding:10px;background:var(--bg);border-radius:var(--radius-sm);text-align:center;">
+              <div style="font-size:1.2rem;font-weight:800;color:var(--accent)" id="statTokens">0</div>
+              <div style="font-size:.6rem;color:var(--text-3);">Tokens</div>
             </div>
-            <div style="padding:12px;background:var(--bg);border-radius:var(--radius-sm);text-align:center;">
-              <div style="font-size:1.4rem;font-weight:800;color:var(--success)" id="statProjects">0</div>
-              <div style="font-size:.65rem;color:var(--text-3);">Projets</div>
+            <div style="padding:10px;background:var(--bg);border-radius:var(--radius-sm);text-align:center;">
+              <div style="font-size:1.2rem;font-weight:800;color:var(--success)" id="statProjects">0</div>
+              <div style="font-size:.6rem;color:var(--text-3);">Projets</div>
             </div>
-            <div style="padding:12px;background:var(--bg);border-radius:var(--radius-sm);text-align:center;">
-              <div style="font-size:1.4rem;font-weight:800;color:var(--orange)" id="statDone">0</div>
-              <div style="font-size:.65rem;color:var(--text-3);">Terminés</div>
+            <div style="padding:10px;background:var(--bg);border-radius:var(--radius-sm);text-align:center;">
+              <div style="font-size:1.2rem;font-weight:800;color:var(--orange)" id="statDone">0</div>
+              <div style="font-size:.6rem;color:var(--text-3);">Terminés</div>
             </div>
+            <div style="padding:10px;background:var(--bg);border-radius:var(--radius-sm);text-align:center;">
+              <div style="font-size:1.2rem;font-weight:800;color:var(--pink)" id="statValidated">0</div>
+              <div style="font-size:.6rem;color:var(--text-3);">Builds OK</div>
+            </div>
+            <div style="padding:10px;background:var(--bg);border-radius:var(--radius-sm);text-align:center;">
+              <div style="font-size:1.2rem;font-weight:800;color:var(--info)" id="statFiles">0</div>
+              <div style="font-size:.6rem;color:var(--text-3);">Fichiers</div>
+            </div>
+          </div>
+          <div style="margin-top:10px;display:flex;gap:6px;">
+            <button class="btn btn-sm btn-outline" onclick="runCleanup()" style="flex:1;font-size:.7rem;">🧹 Nettoyer vieux builds</button>
           </div>
         </div>
         <div class="card">
@@ -667,6 +678,16 @@ async function loadStats() {
   document.getElementById('statTokens').textContent = (s.tokens_total || 0) >= 1000 ? Math.round(s.tokens_total/1000)+'k' : s.tokens_total || 0;
   document.getElementById('statProjects').textContent = s.projects_total || 0;
   document.getElementById('statDone').textContent = s.projects_done || 0;
+  document.getElementById('statValidated').textContent = s.builds_validated || 0;
+  document.getElementById('statFiles').textContent = (s.total_files || 0) >= 1000 ? Math.round(s.total_files/1000)+'k' : s.total_files || 0;
+}
+async function runCleanup() {
+  if (!confirm('Supprimer les vieux builds (>30 jours) et dossiers orphelins ?')) return;
+  const r = await apiJSON('cleanup');
+  if (r.success) {
+    terminalLog('ok', `🧹 Cleanup: ${r.deleted} dossiers supprimés, ${r.freed_kb} Ko libérés`);
+    loadProjects(); loadStats();
+  }
 }
 
 async function showProjectDetail(id) {

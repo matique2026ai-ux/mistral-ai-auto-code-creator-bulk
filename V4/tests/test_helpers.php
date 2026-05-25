@@ -1,36 +1,8 @@
 <?php
+require_once __DIR__ . '/framework.php';
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../helpers.php';
 
-$passed = 0;
-$failed = 0;
-$errors = [];
-
-function test(string $name, callable $fn): void {
-    global $passed, $failed, $errors;
-    try {
-        $fn();
-        echo "  ✅ $name\n";
-        $passed++;
-    } catch (\Throwable $e) {
-        echo "  ❌ $name\n";
-        $errors[] = "  $name — {$e->getMessage()}";
-        $failed++;
-    }
-}
-
-function assert_eq($expected, $actual, string $msg = ''): void {
-    if ($expected !== $actual) {
-        $diff = $msg ?: "Expected " . var_export($expected, true) . ", got " . var_export($actual, true);
-        throw new RuntimeException($diff);
-    }
-}
-
-function assert_true($actual, string $msg = ''): void {
-    if ($actual !== true) throw new RuntimeException($msg ?: "Expected true, got " . var_export($actual, true));
-}
-
-// ═══════════════════════════════════════════════
 echo "╔════════════════════════════════════════╗\n";
 echo "║   Tests Helpers                       ║\n";
 echo "╚════════════════════════════════════════╝\n\n";
@@ -88,15 +60,5 @@ test('slugify — limite de longueur', function () {
     assert_eq(20, strlen($long), "Expected length 20, got '$long' (" . strlen($long) . ")");
 });
 
-// ═══════════════════════════════════════════════
-echo "\n╔════════════════════════════════════════╗\n";
-echo "║   Résumé                               ║\n";
-echo "╚════════════════════════════════════════╝\n\n";
-$total = $passed + $failed;
-echo "  $passed / $total tests réussis\n";
-if ($errors) {
-    echo "\n  Échecs :\n";
-    foreach ($errors as $e) echo "  $e\n";
-}
-echo "\n";
+printSummary('Résumé Helpers');
 exit($failed > 0 ? 1 : 0);

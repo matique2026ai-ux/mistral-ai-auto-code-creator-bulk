@@ -172,14 +172,20 @@ function appendLog(PDO $db, int $projectId, string $step, string $level, string 
 function getGlobalStats(PDO $db): array {
     $keys = $db->query("SELECT COUNT(*) as total, SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END) as active FROM api_keys")->fetch();
     $tokens = $db->query("SELECT SUM(tokens_used) as total FROM token_usage")->fetch();
-    $projects = $db->query("SELECT COUNT(*) as total, SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) as done FROM projects")->fetch();
+    $projects = $db->query("SELECT COUNT(*) as total, SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) as done, SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) as failed, SUM(CASE WHEN status='building' THEN 1 ELSE 0 END) as building FROM projects")->fetch();
     $stacks = $db->query("SELECT project_type, COUNT(*) as cnt FROM projects GROUP BY project_type")->fetchAll();
+    $validated = $db->query("SELECT COUNT(*) FROM projects WHERE build_validated = 1")->fetchColumn();
+    $totalFiles = $db->query("SELECT COALESCE(SUM(file_count), 0) FROM projects")->fetchColumn();
     return [
         'keys_total'    => (int)($keys['total'] ?? 0),
         'keys_active'   => (int)($keys['active'] ?? 0),
         'tokens_total'  => (int)($tokens['total'] ?? 0),
         'projects_total'=> (int)($projects['total'] ?? 0),
         'projects_done' => (int)($projects['done'] ?? 0),
+        'projects_failed' => (int)($projects['failed'] ?? 0),
+        'projects_building' => (int)($projects['building'] ?? 0),
+        'builds_validated' => (int)$validated,
+        'total_files'   => (int)$totalFiles,
         'stacks'        => $stacks,
     ];
 }

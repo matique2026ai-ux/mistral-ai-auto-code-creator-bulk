@@ -15,6 +15,7 @@ class PipelineEngine {
     private int $currentKeyId = 0;
     private array $generatedFiles = [];
     private array $state = [];
+    private array $searchCache = [];
 
     public function __construct() {
         ini_set('memory_limit', '512M');
@@ -152,8 +153,14 @@ class PipelineEngine {
 
         $searchQuery = $this->buildSearchQuery($agentName, $baseContext);
         if ($searchQuery) {
-            $this->log('sys', "🔍 $agentName recherche sur le web : \"$searchQuery\"...");
-            $webResults = webSearch($searchQuery, 3);
+            if (isset($this->searchCache[$searchQuery])) {
+                $webResults = $this->searchCache[$searchQuery];
+                $this->log('sys', "🔍 $agentName utilise le cache web : \"$searchQuery\"");
+            } else {
+                $this->log('sys', "🔍 $agentName recherche sur le web : \"$searchQuery\"...");
+                $webResults = webSearch($searchQuery, 3);
+                $this->searchCache[$searchQuery] = $webResults;
+            }
             if (!empty($webResults)) {
                 $baseContext['web_research'] = $webResults;
             }
@@ -298,15 +305,13 @@ class PipelineEngine {
 
             $this->log('sys', "🔧 Réparation #" . ($repair + 1) . ": réinjection des " . count($issues) . " issues dans les agents...");
 
-            $errorContext = json_encode(['build_errors' => $buildErrors, 'qa_issues' => $issues]);
+            $brief['qa_feedback'] = ['build_errors' => $buildErrors, 'qa_issues' => $issues];
 
-            // Re-run backend if there are backend-related files (src/ directory)
             if (!empty($architecture)) {
                 $backendResult = $this->runBackend($brief, $stackDecision, $architecture, $designSystem);
                 foreach (($backendResult['files'] ?? []) as $f) $this->writeFile($f['filename'], $f['content']);
             }
 
-            // Re-run frontend  
             $feResult = $this->runFrontend($brief, $stackDecision, $architecture, $designSystem, ['files' => []]);
             foreach (($feResult['files'] ?? []) as $f) $this->writeFile($f['filename'], $f['content']);
 
@@ -315,7 +320,7 @@ class PipelineEngine {
             $score = $qaResult['overall_score'] ?? 0;
         }
 
-        updateProject($this->db, $this->projectId, ['qa_score' => $score, 'build_validated' => ($qaResult['build_success'] ?? false) ? 1 : 0]);
+        updateProject($this->db, $this->projectId, ['qa_score' => $score, 'file_count' => count($existing), 'build_validated' => ($qaResult['build_success'] ?? false) ? 1 : 0]);
         $this->log('test', "Score qualité final : $score/100");
         return $qaResult;
     }
@@ -400,21 +405,30 @@ class PipelineEngine {
 
             $allFiles = array_merge($backendFiles, $configFiles, $frontendResult['files'] ?? []);
             $qaResult = $this->qaFixLoop($brief, $stackDecision, $allFiles);
-
             $score = $qaResult['overall_score'] ?? 0;
             $buildSuccess = $qaResult['build_success'] ?? false;
-            $iterations = $qaResult['iterations'] ?? 1;
 
-            $this->log('test', "Score qualité : $score/100 (itérations : $iterations)");
-            $this->log('test', "Problèmes : " . count($qaResult['issues'] ?? []) . ", Corrections : " . count($qaResult['fixes'] ?? []));
-            $this->log('test', "Build : " . ($buildSuccess ? '✅ RÉUSSI' : '❌ ÉCHEC'));
+            for ($repair = 0; $repair < 3; $repair++) {
+                if ($score >= 95) break;
+                $issues = $qaResult['issues'] ?? [];
+                $buildErrors = $qaResult['build_errors'] ?? [];
+                if (empty($issues) && empty($buildErrors)) break;
 
-            if (!empty($qaResult['build_errors'])) {
-                $this->log('warn', "⚠ Erreurs de build persistantes : " . count($qaResult['build_errors']));
-                foreach (array_slice($qaResult['build_errors'], 0, 10) as $be) {
-                    $this->log('warn', "  " . substr($be, 0, 200));
-                }
+                $this->log('sys', "🔧 Réparation #" . ($repair + 1) . " ({$score}/100, " . count($issues) . " issues)...");
+                $brief['qa_feedback'] = ['build_errors' => $buildErrors, 'qa_issues' => $issues];
+
+                $reBackend = $this->runBackend($brief, $stackDecision, $architecture, $designSystem);
+                foreach (($reBackend['files'] ?? []) as $f) $this->writeFile($f['filename'], $f['content']);
+                $reFrontend = $this->runFrontend($brief, $stackDecision, $architecture, $designSystem, $reBackend);
+                foreach (($reFrontend['files'] ?? []) as $f) $this->writeFile($f['filename'], $f['content']);
+
+                $allFiles = array_merge($reBackend['files'] ?? [], $reFrontend['files'] ?? []);
+                $qaResult = $this->qaFixLoop($brief, $stackDecision, $allFiles);
+                $score = $qaResult['overall_score'] ?? 0;
+                $buildSuccess = $qaResult['build_success'] ?? false;
             }
+
+            $this->log('test', "Score qualité final : $score/100, Build : " . ($buildSuccess ? '✅' : '❌'));
 
             updateProject($this->db, $this->projectId, [
                 'qa_score' => $score,
@@ -541,7 +555,19 @@ class PipelineEngine {
     private function scanFiles(string $dir): array {
         $files = [];
         if (!is_dir($dir)) return $files;
-        $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS));
+        $excludeDirs = ['node_modules', '.next', '.git', 'vendor', '.cache', '__pycache__', '.venv', 'target'];
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveCallbackFilterIterator(
+                new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS),
+                function ($current, $key, $iterator) use ($excludeDirs) {
+                    if ($current->isDir() && in_array($current->getBasename(), $excludeDirs, true)) {
+                        return false; // Skip excluded dirs entirely
+                    }
+                    return true;
+                }
+            ),
+            RecursiveIteratorIterator::SELF_FIRST
+        );
         foreach ($iterator as $file) {
             if ($file->isFile()) {
                 $relPath = str_replace($dir . DIRECTORY_SEPARATOR, '', $file->getPathname());

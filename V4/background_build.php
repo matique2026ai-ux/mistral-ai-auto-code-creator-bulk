@@ -12,13 +12,12 @@ $projectId = (int)($argv[1] ?? 0);
 if (!$projectId) { fwrite(STDERR, "Usage: php background_build.php <project_id>\n"); exit(1); }
 
 $db = getDB();
-$project = $db->query("SELECT * FROM projects WHERE id = $projectId")->fetch();
+$stmt = $db->prepare("SELECT * FROM projects WHERE id = ?"); $stmt->execute([$projectId]); $project = $stmt->fetch();
 if (!$project) { fwrite(STDERR, "Project #$projectId not found\n"); exit(1); }
 
 // Create build directory
 $buildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($project['folder']);
 if (!is_dir($buildDir)) mkdir($buildDir, 0755, true);
-if (!$project) { fwrite(STDERR, "Project #$projectId not found\n"); exit(1); }
 
 // Mark as building
 updateProject($db, $projectId, ['status' => 'building']);
@@ -45,6 +44,6 @@ try {
     fwrite(STDERR, "Build #$projectId terminé: $status (QA: " . ($result['qa_score'] ?? 0) . "/100)\n");
 } catch (\Throwable $e) {
     updateProject($db, $projectId, ['status' => 'failed']);
-    logBuild($db, $projectId, 'engine', 'err', $e->getMessage());
+    appendLog($db, $projectId, 'engine', 'err', $e->getMessage());
     fwrite(STDERR, "Build #$projectId ERREUR: " . $e->getMessage() . "\n");
 }

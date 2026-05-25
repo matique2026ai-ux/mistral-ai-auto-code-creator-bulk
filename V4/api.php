@@ -133,16 +133,16 @@ if ($action === 'list_projects') {
 
 if ($action === 'get_project') {
     $id = (int)p('id'); if (!$id) err('ID missing');
-    $row = $db->query("SELECT * FROM projects WHERE id = $id")->fetch();
+    $stmt = $db->prepare("SELECT * FROM projects WHERE id = ?"); $stmt->execute([$id]); $row = $stmt->fetch();
     if (!$row) err('Project not found');
-    $files = $db->query("SELECT filepath, language, size, status FROM generated_files WHERE project_id = $id ORDER BY id ASC")->fetchAll();
-    $logs  = $db->query("SELECT step, level, message, logged_at FROM build_logs WHERE project_id = $id ORDER BY id ASC LIMIT 200")->fetchAll();
+    $stmt = $db->prepare("SELECT filepath, language, size, status FROM generated_files WHERE project_id = ? ORDER BY id ASC"); $stmt->execute([$id]); $files = $stmt->fetchAll();
+    $stmt = $db->prepare("SELECT step, level, message, logged_at FROM build_logs WHERE project_id = ? ORDER BY id ASC LIMIT 200"); $stmt->execute([$id]); $logs = $stmt->fetchAll();
     respond(['project' => $row, 'files' => $files, 'logs' => $logs]);
 }
 
 if ($action === 'delete_project') {
     $id = (int)p('id'); if (!$id) err('ID missing');
-    $row = $db->query("SELECT folder FROM projects WHERE id = $id")->fetch();
+    $stmt = $db->prepare("SELECT folder FROM projects WHERE id = ?"); $stmt->execute([$id]); $row = $stmt->fetch();
     if ($row) {
         $dir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($row['folder']);
         if (is_dir($dir)) _rmdir_recursive($dir);
@@ -156,7 +156,7 @@ if ($action === 'delete_project') {
 if ($action === 'run_build') {
     set_time_limit(0);
     $id = (int)p('project_id'); if (!$id) err('Project ID required');
-    $project = $db->query("SELECT * FROM projects WHERE id = $id")->fetch();
+    $stmt = $db->prepare("SELECT * FROM projects WHERE id = ?"); $stmt->execute([$id]); $project = $stmt->fetch();
     if (!$project) err('Project not found');
 
     // Clear old logs
@@ -182,7 +182,7 @@ if ($action === 'run_build') {
 
 if ($action === 'download_zip') {
     $id = (int)p('id'); if (!$id) err('Project ID required');
-    $project = $db->query("SELECT * FROM projects WHERE id = $id")->fetch();
+    $stmt = $db->prepare("SELECT * FROM projects WHERE id = ?"); $stmt->execute([$id]); $project = $stmt->fetch();
     if (!$project) err('Project not found');
 
     $folderName = basename($project['folder']);
@@ -223,8 +223,49 @@ if ($action === 'get_stats') {
 
 if ($action === 'get_logs') {
     $id = (int)p('project_id'); if (!$id) err('Project ID required');
-    $logs = $db->query("SELECT step, level, message, logged_at FROM build_logs WHERE project_id = $id ORDER BY id ASC")->fetchAll();
-    respond(['logs' => $logs]);
+    $stmt = $db->prepare("SELECT step, level, message, logged_at FROM build_logs WHERE project_id = ? ORDER BY id ASC"); $stmt->execute([$id]);
+    respond(['logs' => $stmt->fetchAll()]);
+}
+
+// ─── CLEANUP — supprime vieux builds et dossiers orphelins ─────────
+
+if ($action === 'cleanup') {
+    $deleted = 0;
+    $freed = 0;
+
+    // 1. Vieux builds (>30 jours)
+    $old = $db->query("SELECT id, folder FROM projects WHERE created_at < date('now','-30 days') AND status = 'done'")->fetchAll();
+    foreach ($old as $p) {
+        $dir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($p['folder']);
+        if (is_dir($dir)) {
+            $size = 0;
+            $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS));
+            foreach ($rii as $f) if ($f->isFile()) $size += $f->getSize();
+            _rmdir_recursive($dir);
+            $freed += $size;
+        }
+        $db->prepare("DELETE FROM projects WHERE id = ?")->execute([$p['id']]);
+        $deleted++;
+    }
+
+    // 2. Dossiers orphelins (builds/sans projet correspondant)
+    $folders = $db->query("SELECT folder FROM projects")->fetchAll(PDO::FETCH_COLUMN);
+    $validFolders = array_map(fn($f) => basename($f), $folders);
+    $buildsDir = AC4_BUILDS_DIR;
+    if (is_dir($buildsDir)) {
+        foreach (new FilesystemIterator($buildsDir, FilesystemIterator::SKIP_DOTS) as $entry) {
+            if ($entry->isDir() && !in_array($entry->getBasename(), $validFolders, true)) {
+                $size = 0;
+                $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($entry->getPathname(), FilesystemIterator::SKIP_DOTS));
+                foreach ($rii as $f) if ($f->isFile()) $size += $f->getSize();
+                _rmdir_recursive($entry->getPathname());
+                $freed += $size;
+                $deleted++;
+            }
+        }
+    }
+
+    respond(['deleted' => $deleted, 'freed_bytes' => $freed, 'freed_kb' => round($freed / 1024, 1)]);
 }
 
 // ─── Unknown ──────────────────────────────────────────────────────────
