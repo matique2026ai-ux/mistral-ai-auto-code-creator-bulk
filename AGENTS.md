@@ -117,22 +117,28 @@ Le QA loop injecte les issues détectées comme `$brief['qa_feedback']` dans les
 
 ## Dernier commit
 
-**V4.12** — `HEAD` — Refactor engine → AIModel multi-provider, token tracking fix
+**V4.13** — `HEAD` — Tests engine with mock, setAI injection, 40 tests
 
-### Refactoring majeur
-- **`PipelineEngine::callAI()` réécrite** : ne fait plus d'appel curl direct vers Mistral. Délègue maintenant à `AIModel::call()` (`models.php`), activant le **fallback multi-provider** (Mistral → OpenAI → Claude → Gemini) pour chaque appel d'agent.
-- **Routeur `AIModel` désormais vivant** : la classe `AIModel` n'était **jamais instanciée** nulle part — tout le code de fallback, rotation de clés et stats par provider était mort depuis V4.0. Maintenant injecté dans `PipelineEngine` et utilisé pour chaque étape du pipeline.
-- **Code mort supprimé** : propriétés `$currentKey`, `$currentKeyId` et méthode `getKey()` retirées de `PipelineEngine` (gérées par `AIModel`).
-- **Token tracking corrigé** : `AIModel::call()` enregistrait les tokens avec `project_id=0`. Ajout d'un setter `AIModel::setProjectId()` → les 3 points d'entrée (`run()`, `runJob()`, `resume()`) synchronisent le project ID.
+### Nouveautés
+- **Tests mockés pour le pipeline engine** (`tests/test_engine.php`) : 4 tests qui valident le pipeline complet sans clé API
+- **`PipelineEngine::setAI()`** ajouté pour injection de dépendance — permet de remplacer `AIModel` par un mock dans les tests
+- **Constructeur `PipelineEngine(?AIModel $ai = null)`** accepte un AIModel optionnel
+- **MockAIModel** : classe qui étend AIModel et retourne des réponses prédéfinies par étape
+- **Master runner** : `tests/all.php` inclut désormais la suite Pipeline Engine
 
-### Fichiers impactés (V4.12)
+### Tests ajoutés (4)
+1. **Pipeline complet — 7 agents** : CTO → Architect → Designer → Backend → Frontend → QA → DevOps, vérifie l'exécution sans erreur, le status 'done', qa_score=100, et la génération des fichiers
+2. **Boucle QA — réparation** : QA renvoie score 70 (< 95), vérifie que le pipeline déclenche la réparation (backend+frontend re-générés), limite à 2 appels QA
+3. **Erreur API — échec propre** : simulateur de panne API (CTO OK, architect manquant), vérifie que le pipeline retourne `success: false` sans crash
+4. **Ordre des appels AI** : vérifie que les 7 premiers appels suivent l'ordre exact des agents
+
+### Fichiers impactés (V4.13)
 | Fichier | Changements |
 |---------|-------------|
-| `engine.php` | callAI() → délègue à AIModel::call(), plus de curl direct, getKey() retiré |
-| `models.php` | setProjectId() ajouté, recordTokens() utilise le bon project_id |
-
-### Correctifs bugs
-- **Bug potentiel** : toute la couche multi-provider était du code mort. Maintenant connectée et fonctionnelle.
+| `engine.php` | Constructeur accepte `?AIModel`, setAI() ajouté |
+| `tests/test_engine.php` | Nouveau : MockAIModel + 4 tests pipeline |
+| `tests/all.php` | Suite `Pipeline Engine` ajoutée |
+| `AGENTS.md` | Changelog V4.13 mis à jour |
 
 ---
 

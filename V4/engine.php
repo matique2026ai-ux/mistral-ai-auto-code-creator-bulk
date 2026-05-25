@@ -16,10 +16,14 @@ class PipelineEngine {
     private array $generatedFiles = [];
     private array $searchCache = [];
 
-    public function __construct() {
+    public function __construct(?AIModel $ai = null) {
         ini_set('memory_limit', '512M');
         $this->db = getDB();
-        $this->ai = new AIModel();
+        $this->ai = $ai ?? new AIModel();
+    }
+
+    public function setAI(AIModel $ai): void {
+        $this->ai = $ai;
     }
 
     // ─── API Multi-Provider (via AIModel router) ─────────────────────

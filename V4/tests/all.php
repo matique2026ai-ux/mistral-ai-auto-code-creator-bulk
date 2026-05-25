@@ -8,6 +8,7 @@ $testFiles = [
     'test_config.php'  => 'Config',
     'test_queue.php'   => 'JobQueue',
     'test_db.php'      => 'DB Helpers',
+    'test_engine.php'  => 'Pipeline Engine',
 ];
 
 $totalPassed = 0;
