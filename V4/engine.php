@@ -379,7 +379,7 @@ class PipelineEngine {
                 $reFrontend = $this->runFrontend($brief, $stackDecision, $architecture, $designSystem, $reBackend);
                 foreach (($reFrontend['files'] ?? []) as $f) $this->writeFile($f['filename'], $f['content']);
 
-                $allFiles = array_merge($reBackend['files'] ?? [], $reFrontend['files'] ?? []);
+                $allFiles = $this->scanFiles(AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($this->projectFolder));
                 $qaResult = $this->qaFixLoop($brief, $stackDecision, $allFiles);
                 $score = $qaResult['overall_score'] ?? 0;
                 $buildSuccess = $qaResult['build_success'] ?? false;

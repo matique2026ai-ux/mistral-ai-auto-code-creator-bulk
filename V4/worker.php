@@ -98,11 +98,7 @@ function launchWorkerChild(int $projectId, int $jobId, string $jobName): ?int {
     $cmd = "\"$phpBin\" \"$scriptPath\" $projectId $jobId $jobName";
 
     if (PHP_OS_FAMILY === 'Windows') {
-        // Run synchronously on Windows (start /B is unreliable)
-        $engine = new PipelineEngine();
-        $queue = new JobQueue();
-        $job = $queue->getJobById($jobId);
-        if ($job) executeJobSync($engine, $projectId, $job, $queue);
+        // Run synchronously: return null so caller's else-branch executes the job
         return null;
     } else {
         exec("nohup $cmd > /dev/null 2>&1 & echo $!", $out);

@@ -92,12 +92,18 @@ class AIModel {
     }
 
     private function getProviderKey(string $provider): ?array {
-        $stmt = $this->db->prepare(
-            "SELECT * FROM api_keys WHERE provider = ? AND is_active = 1 AND error_count < " . AC4_MAX_KEY_ERRORS . "
-             ORDER BY last_used ASC NULLS FIRST LIMIT 1"
-        );
-        $stmt->execute([$provider]);
-        $key = $stmt->fetch();
+        try {
+            $stmt = $this->db->prepare(
+                "SELECT * FROM api_keys WHERE provider = ? AND is_active = 1 AND error_count < " . AC4_MAX_KEY_ERRORS . "
+                 ORDER BY last_used ASC NULLS FIRST LIMIT 1"
+            );
+            $stmt->execute([$provider]);
+            $key = $stmt->fetch();
+        } catch (\Exception $e) {
+            // Fallback: provider column may not exist yet
+            $key = getNextApiKey($this->db);
+            return $key ?: null;
+        }
         if ($key) {
             $this->db->prepare("UPDATE api_keys SET last_used = CURRENT_TIMESTAMP WHERE id = ?")
                 ->execute([$key['id']]);

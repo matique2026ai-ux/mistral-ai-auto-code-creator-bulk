@@ -22,6 +22,7 @@ function migrateDB(PDO $db): void {
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
         label        TEXT NOT NULL,
         key_val      TEXT NOT NULL UNIQUE,
+        provider     TEXT DEFAULT 'mistral',
         is_active    INTEGER NOT NULL DEFAULT 1,
         error_count  INTEGER NOT NULL DEFAULT 0,
         total_tokens INTEGER NOT NULL DEFAULT 0,
@@ -109,6 +110,13 @@ function migrateDB(PDO $db): void {
     // Migration v4.1: add build_validated column
     try {
         $db->exec("ALTER TABLE projects ADD COLUMN build_validated INTEGER DEFAULT 0");
+    } catch (\Exception $e) {
+        // Column already exists
+    }
+
+    // Migration v4.14: add provider column to api_keys
+    try {
+        $db->exec("ALTER TABLE api_keys ADD COLUMN provider TEXT DEFAULT 'mistral'");
     } catch (\Exception $e) {
         // Column already exists
     }

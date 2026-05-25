@@ -117,28 +117,22 @@ Le QA loop injecte les issues détectées comme `$brief['qa_feedback']` dans les
 
 ## Dernier commit
 
-**V4.13** — `HEAD` — Tests engine with mock, setAI injection, 40 tests
+**V4.14** — `HEAD` — Fix showstopper provider column + double-execute worker + QA config files
 
-### Nouveautés
-- **Tests mockés pour le pipeline engine** (`tests/test_engine.php`) : 4 tests qui valident le pipeline complet sans clé API
-- **`PipelineEngine::setAI()`** ajouté pour injection de dépendance — permet de remplacer `AIModel` par un mock dans les tests
-- **Constructeur `PipelineEngine(?AIModel $ai = null)`** accepte un AIModel optionnel
-- **MockAIModel** : classe qui étend AIModel et retourne des réponses prédéfinies par étape
-- **Master runner** : `tests/all.php` inclut désormais la suite Pipeline Engine
+### Correctifs bugs (audit engine)
+- **SHOWSTOPPER** : la table `api_keys` n'avait pas de colonne `provider`. `AIModel::getProviderKey()` exécutait `SELECT ... WHERE provider = ?` → erreur SQL "no such column" sur le premier appel IA. Tous les builds échouaient silencieusement après V4.12.
+  - Migration ajoutée dans `migrateDB()` : `ALTER TABLE api_keys ADD COLUMN provider TEXT DEFAULT 'mistral'`
+  - `getProviderKey()` rattrapé : si la colonne n'existe pas encore (base ancienne), fallback sur `getNextApiKey()` sans crash
+- **SHOWSTOPPER** : `worker.php` doublait chaque job sur Windows (`launchWorkerChild()` exécutait le job **et** retournait `null`, ce qui déclenchait une seconde exécution dans la branche `else` de l'appelant). Suppression de `executeJobSync()` dans la branche Windows.
+- **Bug** : la boucle de réparation QA dans `run()` perdait les fichiers de configuration et les fichiers précédents. `$allFiles` était recréé depuis `$reBackend['files']` + `$reFrontend['files']` uniquement. Remplacé par `scanFiles()` qui lit tous les fichiers du disque.
 
-### Tests ajoutés (4)
-1. **Pipeline complet — 7 agents** : CTO → Architect → Designer → Backend → Frontend → QA → DevOps, vérifie l'exécution sans erreur, le status 'done', qa_score=100, et la génération des fichiers
-2. **Boucle QA — réparation** : QA renvoie score 70 (< 95), vérifie que le pipeline déclenche la réparation (backend+frontend re-générés), limite à 2 appels QA
-3. **Erreur API — échec propre** : simulateur de panne API (CTO OK, architect manquant), vérifie que le pipeline retourne `success: false` sans crash
-4. **Ordre des appels AI** : vérifie que les 7 premiers appels suivent l'ordre exact des agents
-
-### Fichiers impactés (V4.13)
+### Fichiers impactés (V4.14)
 | Fichier | Changements |
 |---------|-------------|
-| `engine.php` | Constructeur accepte `?AIModel`, setAI() ajouté |
-| `tests/test_engine.php` | Nouveau : MockAIModel + 4 tests pipeline |
-| `tests/all.php` | Suite `Pipeline Engine` ajoutée |
-| `AGENTS.md` | Changelog V4.13 mis à jour |
+| `db.php` | `provider` colonne ajoutée à `api_keys` (CREATE + ALTER migration) |
+| `models.php` | `getProviderKey()` fallback si colonne manquante |
+| `worker.php` | Retiré `executeJobSync()` dans `launchWorkerChild()` Windows |
+| `engine.php` | Repair loop utilise `scanFiles()` au lieu de merge manuel |
 
 ---
 
