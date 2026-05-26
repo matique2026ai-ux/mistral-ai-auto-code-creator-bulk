@@ -250,8 +250,8 @@ class PipelineEngine {
         $qaResult = $this->qaFixLoop($brief, $stackDecision, $existing);
         $score = $qaResult['overall_score'] ?? 0;
 
-        // If QA score < 95 but build compiles, re-run backend+frontend with QA issues as context
-        $maxRepairIterations = 3;
+        // Repair loop: use a single repair agent call instead of regenerating everything
+        $maxRepairIterations = 2;
         for ($repair = 0; $repair < $maxRepairIterations; $repair++) {
             if ($score >= 95) break;
 
@@ -259,17 +259,12 @@ class PipelineEngine {
             $issues = $qaResult['issues'] ?? [];
             if (empty($buildErrors) && empty($issues)) break;
 
-            $this->log('sys', "🔧 Réparation #" . ($repair + 1) . ": réinjection des " . count($issues) . " issues dans les agents...");
+            $this->log('sys', "🔧 Réparation #" . ($repair + 1) . ": correction ciblée des " . count($issues) . " issues...");
 
-            $brief['qa_feedback'] = ['build_errors' => $buildErrors, 'qa_issues' => $issues];
-
-            if (!empty($architecture)) {
-                $backendResult = $this->runBackend($brief, $stackDecision, $architecture, $designSystem);
-                foreach (($backendResult['files'] ?? []) as $f) $this->writeFile($f['filename'], $f['content']);
+            $fixes = $this->runRepair($brief, $stackDecision, $issues, $buildErrors, $existing);
+            foreach ($fixes as $f) {
+                $this->writeFile($f['filename'], $f['content']);
             }
-
-            $feResult = $this->runFrontend($brief, $stackDecision, $architecture, $designSystem, ['files' => []]);
-            foreach (($feResult['files'] ?? []) as $f) $this->writeFile($f['filename'], $f['content']);
 
             $existing = $this->scanFiles($buildDir);
             $qaResult = $this->qaFixLoop($brief, $stackDecision, $existing);
@@ -365,19 +360,19 @@ class PipelineEngine {
             $score = $qaResult['overall_score'] ?? 0;
             $buildSuccess = $qaResult['build_success'] ?? false;
 
-            for ($repair = 0; $repair < 3; $repair++) {
+            for ($repair = 0; $repair < 2; $repair++) {
                 if ($score >= 95) break;
                 $issues = $qaResult['issues'] ?? [];
                 $buildErrors = $qaResult['build_errors'] ?? [];
                 if (empty($issues) && empty($buildErrors)) break;
 
                 $this->log('sys', "🔧 Réparation #" . ($repair + 1) . " ({$score}/100, " . count($issues) . " issues)...");
-                $brief['qa_feedback'] = ['build_errors' => $buildErrors, 'qa_issues' => $issues];
 
-                $reBackend = $this->runBackend($brief, $stackDecision, $architecture, $designSystem);
-                foreach (($reBackend['files'] ?? []) as $f) $this->writeFile($f['filename'], $f['content']);
-                $reFrontend = $this->runFrontend($brief, $stackDecision, $architecture, $designSystem, $reBackend);
-                foreach (($reFrontend['files'] ?? []) as $f) $this->writeFile($f['filename'], $f['content']);
+                $allFiles = $this->scanFiles(AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($this->projectFolder));
+                $fixes = $this->runRepair($brief, $stackDecision, $issues, $buildErrors, $allFiles);
+                foreach ($fixes as $f) {
+                    $this->writeFile($f['filename'], $f['content']);
+                }
 
                 $allFiles = $this->scanFiles(AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($this->projectFolder));
                 $qaResult = $this->qaFixLoop($brief, $stackDecision, $allFiles);
@@ -695,32 +690,78 @@ class PipelineEngine {
     }
 
     private function fixImportExportMismatch(array $files): void {
-        $defaultExports = [];
+        $buildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($this->projectFolder);
+
+        // Build export map: filename => { default: ?string, named: string[] }
+        $exportMap = [];
         foreach ($files as $f) {
             $content = $f['content'] ?? '';
+            $default = null;
+            $named = [];
             if (preg_match('/export\s+default\s+(?:class|function|const|let|var|interface|type|abstract\s+class)\s+(\w+)/', $content, $m)) {
-                $defaultExports[$m[1]] = $f['filename'];
+                $default = $m[1];
+                $named[] = $m[1];
             }
+            preg_match_all('/export\s+(?:const|function|let|var|class|async\s+function|interface|type)\s+(\w+)/', $content, $m);
+            $named = array_merge($named, $m[1] ?? []);
+            // export { Name1, Name2 }
+            if (preg_match('/export\s*\{\s*([^}]+)\s*\}/', $content, $em)) {
+                foreach (explode(',', $em[1]) as $part) {
+                    $part = trim(preg_replace('/\s+as\s+\w+/', '', $part));
+                    if ($part) $named[] = $part;
+                }
+            }
+            $exportMap[$f['filename']] = ['default' => $default, 'named' => array_unique($named)];
         }
-        if (empty($defaultExports)) return;
+        if (empty($exportMap)) return;
 
-        $buildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($this->projectFolder);
         foreach ($files as $f) {
             $content = $f['content'] ?? '';
             $changed = false;
-            foreach ($defaultExports as $name => $sourceFile) {
-                // Detect `import { Name } from` where Name is a default export
-                $pattern = '/import\s*\{\s*' . preg_quote($name, '/') . '\s*\}\s*from\s*[\'"]/';
-                if (preg_match($pattern, $content)) {
+
+            // Find all local imports: import ... from 'relpath'
+            preg_match_all('/import\s+(?:\{\s*([^}]+)\s*\}|(\w+))\s+from\s+[\'"](\.\.?\/[^\'"]+)[\'"]/', $content, $imports, PREG_SET_ORDER);
+            foreach ($imports as $imp) {
+                $importPath = $imp[3];
+                $namedImport = trim($imp[1] ?? '');
+                $defaultImport = trim($imp[2] ?? '');
+                if (!$defaultImport && !$namedImport) continue;
+
+                // Resolve which file this import points to
+                $resolved = $this->resolveImportPathForFix($f['filename'], $importPath, $buildDir);
+                if (!$resolved || !isset($exportMap[$resolved])) continue;
+
+                $target = $exportMap[$resolved];
+
+                // Case 1: import { Name } but target has export default Name → switch to default import
+                if ($namedImport && $target['default']) {
+                    $names = array_map('trim', explode(',', $namedImport));
+                    foreach ($names as $n) {
+                        $n = preg_replace('/\s+as\s+\w+/', '', $n);
+                        if ($n === $target['default']) {
+                            $content = preg_replace(
+                                '/import\s*\{\s*' . preg_quote($target['default'], '/') . '\s*\}\s*from\s*([\'"])/',
+                                'import ' . $target['default'] . ' from $1',
+                                $content
+                            );
+                            $changed = true;
+                            $this->log('fix', "Import corrigé: {$f['filename']} → import {$target['default']} (export default dans {$resolved})");
+                        }
+                    }
+                }
+
+                // Case 2: import Name but target doesn't have default (only named exports) → switch to named import
+                if ($defaultImport && !$target['default'] && in_array($defaultImport, $target['named'])) {
                     $content = preg_replace(
-                        '/import\s*\{\s*' . preg_quote($name, '/') . '\s*\}\s*from\s*([\'"])/',
-                        'import ' . $name . ' from $1',
+                        '/import\s+' . preg_quote($defaultImport, '/') . '\s+from\s*([\'"])/',
+                        'import { ' . $defaultImport . ' } from $1',
                         $content
                     );
                     $changed = true;
-                    $this->log('fix', "Import corrigé: {$f['filename']} → {$name} (export default dans {$sourceFile})");
+                    $this->log('fix', "Import corrigé: {$f['filename']} → import {{$defaultImport}} (export nommé dans {$resolved})");
                 }
             }
+
             if ($changed) {
                 $filepath = $buildDir . DIRECTORY_SEPARATOR . $f['filename'];
                 $dir = dirname($filepath);
@@ -728,6 +769,26 @@ class PipelineEngine {
                 file_put_contents($filepath, $content);
             }
         }
+    }
+
+    private function resolveImportPathForFix(string $sourceFile, string $importPath, string $buildDir): ?string {
+        $sourceDir = str_replace('\\', '/', dirname($sourceFile));
+        $importPath = str_replace('\\', '/', $importPath);
+        $parts = explode('/', $sourceDir);
+        foreach (explode('/', $importPath) as $part) {
+            if ($part === '.') continue;
+            if ($part === '..') { if (count($parts)) array_pop($parts); continue; }
+            $parts[] = $part;
+        }
+        $resolved = implode('/', $parts);
+        $extensions = ['.ts', '.tsx', '.js', '.jsx', '.vue', '.svelte'];
+        foreach ($extensions as $ext) {
+            $c = $resolved . $ext;
+            if (isset($this->generatedFiles) && in_array($c, $this->generatedFiles)) return $c;
+        }
+        $c = $resolved . DIRECTORY_SEPARATOR . 'index.ts';
+        if (isset($this->generatedFiles) && in_array($c, $this->generatedFiles)) return $c;
+        return null;
     }
 
     // ─── Agent Frontend (fichier par fichier) ────────────────────
@@ -738,41 +799,12 @@ class PipelineEngine {
         // Step 1: Plan — liste des fichiers uniquement
         $this->log('ai', 'Frontend: Planification des fichiers...');
 
-        // For static HTML, always generate 1 file
-        if ($feType === 'html_css_js') {
-            $fileList = [['filename' => 'index.html', 'description' => 'Page principale unique HTML + CSS inline + JS']];
-            $this->log('ok', 'Frontend: site statique — 1 fichier (index.html)');
-        } else {
-            $frontendLabel = match ($feType) {
-                'react', 'vite' => 'React + Vite',
-                'next' => 'Next.js 14',
-                'vue' => 'Vue 3',
-                'flutter' => 'Flutter',
-                'kotlin' => 'Android Kotlin',
-                'swiftui' => 'SwiftUI',
-                default => $feType,
-            };
-            $planMessages = [
-                ['role' => 'system', 'content' => "Tu listes les fichiers nécessaires pour un projet {$frontendLabel}. MAXIMUM 5 fichiers. Réponse JSON : {\"files\":[{\"filename\":\"...\",\"description\":\"...\"}]}. AUCUN CODE. Garde le plan minimal (1 fichier = 1 composant, regroupe tout le nécessaire)."],
-                ['role' => 'user', 'content' => json_encode([
-                    'project' => $brief['master_prompt'] ?? $brief['title'] ?? '',
-                    'stack' => $stack['stack_decision'] ?? [],
-                    'pages' => $arch['frontend_pages'] ?? [],
-                ])],
-            ];
-            $plan = $this->callWithRetry($planMessages, 1500, true, 'frontend-plan');
-            $fileList = $plan['files'] ?? [];
-            if (empty($fileList)) throw new Exception('Frontend: plan vide');
-            $this->log('ok', 'Frontend: ' . count($fileList) . ' fichiers à générer');
-        }
-
-        // Step 2: Génération
         $prompt = $this->loadAgentPrompt('frontend');
         $allFiles = [];
-        $total = count($fileList);
+        $allConfigFiles = [];
 
+        // For static HTML, always generate 1 file
         if ($feType === 'html_css_js') {
-            // Static HTML: generate all content in a single API call
             $this->progress(60, 'Frontend: index.html...');
             $this->log('ai', 'Frontend: génération index.html complet...');
             $feContent = $this->enrichContext('frontend', [
@@ -791,9 +823,73 @@ class PipelineEngine {
                 $allFiles[] = ['filename' => 'index.html', 'content' => $content, 'language' => 'html'];
             }
         } else {
-            // File-by-file for component-based frameworks (max ~5 files from plan)
+            // Step 1: Generate config scaffolding first (package.json, vite.config.ts, index.html, etc.)
+            $frontendLabel = match ($feType) {
+                'react', 'vite' => 'React + Vite',
+                'next' => 'Next.js 14',
+                'vue' => 'Vue 3',
+                'flutter' => 'Flutter',
+                'kotlin' => 'Android Kotlin',
+                'swiftui' => 'SwiftUI',
+                default => $feType,
+            };
+            $this->log('ai', "Frontend: génération du scaffolding {$frontendLabel}...");
+            $this->progress(55, 'Frontend: configuration du framework...');
+            $scaffoldContent = $this->enrichContext('frontend', [
+                'brief' => $brief, 'stack' => $stack, 'architecture' => $arch,
+                'design_system' => $design, 'backend' => $backend,
+                'pages' => $arch['frontend_pages'] ?? [],
+                'task' => 'generate_config_scaffolding',
+            ]);
+            $feScaffoldExt = in_array($feType, ['react', 'vite', 'next', 'vue']) ? '.tsx' : '.jsx';
+            $scaffoldMsg = [
+                ['role' => 'system', 'content' => $prompt . "\n\nGénère UNIQUEMENT les fichiers de configuration (config_files) pour un projet {$frontendLabel}. IMPORTANT : l'index.html doit importer '/src/main{$feScaffoldExt}' dans le script module (pas main.jsx). Réponse JSON : {\"config_files\":[{\"filename\":\"package.json\",\"content\":\"...\"},{\"filename\":\"vite.config.ts\",\"content\":\"...\"},{\"filename\":\"index.html\",\"content\":\"...\"}]}. Ne mets PAS de composants UI ici."],
+                ['role' => 'user', 'content' => json_encode($scaffoldContent)],
+            ];
+            $scaffoldRes = $this->callWithRetry($scaffoldMsg, 5000, true, 'frontend-scaffold');
+            $configFiles = $scaffoldRes['config_files'] ?? [];
+            foreach ($configFiles as $cf) {
+                $this->writeFile($cf['filename'], $cf['content']);
+                $allConfigFiles[] = $cf;
+            }
+            $this->log('ok', 'Frontend: ' . count($configFiles) . ' fichiers de configuration générés');
+
+            // Step 2: Plan — liste des composants UI
+            $this->log('ai', "Frontend: planification des composants...");
+            $planMessages = [
+                ['role' => 'system', 'content' => "Tu listes les fichiers composants UI nécessaires pour un projet {$frontendLabel}. MAXIMUM 8 fichiers. Réponse JSON : {\"files\":[{\"filename\":\"...\",\"description\":\"...\"}]}. AUCUN CODE. Ne mets PAS les fichiers de config (package.json, vite.config.ts, index.html, tsconfig.json)."],
+                ['role' => 'user', 'content' => json_encode([
+                    'project' => $brief['master_prompt'] ?? $brief['title'] ?? '',
+                    'stack' => $stack['stack_decision'] ?? [],
+                    'pages' => $arch['frontend_pages'] ?? [],
+                    'already_generated' => array_column($configFiles, 'filename'),
+                ])],
+            ];
+            $plan = $this->callWithRetry($planMessages, 2000, true, 'frontend-plan');
+            $fileList = $plan['files'] ?? [];
+            if (empty($fileList)) throw new Exception('Frontend: plan vide');
+
+            // Force essential entry files for React/Vite if missing
+            $feFileExt = in_array($feType, ['react', 'vite', 'next', 'vue']) ? '.tsx' : '.jsx';
+            $essentialFiles = [
+                "frontend/src/main{$feFileExt}",
+                "frontend/src/App{$feFileExt}",
+            ];
+            $plannedFilenames = array_map(fn($f) => $f['filename'] ?? '', $fileList);
+            foreach (array_reverse($essentialFiles) as $ef) {
+                if (!in_array($ef, $plannedFilenames)) {
+                    $desc = str_contains($ef, 'main') ? 'Point d\'entrée React' : 'Composant racine App';
+                    array_unshift($fileList, ['filename' => $ef, 'description' => $desc]);
+                    $this->log('sys', "Ajout forcé: {$ef} ({$desc})");
+                }
+            }
+
+            $this->log('ok', 'Frontend: ' . count($fileList) . ' composants à générer');
+
+            // Step 3: Generate each component file
+            $total = count($fileList);
             foreach ($fileList as $i => $fileDef) {
-                $this->progress(55 + intval(20 * $i / $total), "Frontend: fichier " . ($i + 1) . "/{$total}");
+                $this->progress(60 + intval(25 * $i / $total), "Frontend: composant " . ($i + 1) . "/{$total}");
                 $filename = $fileDef['filename'] ?? "f{$i}.tsx";
                 $this->log('ai', "Frontend [{$i}/{$total}]: {$filename}...");
                 $feContent = $this->enrichContext('frontend', [
@@ -802,12 +898,13 @@ class PipelineEngine {
                     'pages' => $arch['frontend_pages'] ?? [],
                     'file_to_generate' => $filename,
                     'all_planned_files' => array_column($fileList, 'filename'),
+                    'config_files' => array_column($configFiles, 'filename'),
                 ]);
                 $fileMsg = [
                     ['role' => 'system', 'content' => $prompt . "\n\nGénère UNIQUEMENT le fichier {$filename}. Réponse JSON : {\"filename\":\"{$filename}\",\"content\":\"...\",\"language\":\"...\"}"],
                     ['role' => 'user', 'content' => json_encode($feContent)],
                 ];
-                $res = $this->callWithRetry($fileMsg, 6000, true, 'frontend-file');
+                $res = $this->callWithRetry($fileMsg, 8000, true, 'frontend-file');
                 $fn = $res['filename'] ?? $filename;
                 $content = $res['content'] ?? '';
                 if ($content) {
@@ -818,9 +915,10 @@ class PipelineEngine {
             }
         }
 
-        if (empty($allFiles)) throw new Exception('Frontend: aucun fichier généré');
-        $this->log('ok', 'Frontend généré : ' . count($allFiles) . ' fichiers');
-        return ['files' => $allFiles];
+        $totalFiles = count($allFiles) + count($allConfigFiles);
+        if ($totalFiles === 0) throw new Exception('Frontend: aucun fichier généré');
+        $this->log('ok', 'Frontend généré : ' . count($allFiles) . ' composants + ' . count($allConfigFiles) . ' fichiers de config');
+        return ['files' => $allFiles, 'config_files' => $allConfigFiles];
     }
 
     // ─── Agent QA ─────────────────────────────────────────────────
@@ -876,16 +974,20 @@ class PipelineEngine {
         $cmds = [];
 
         // Node.js / JS ecosystem
-        if (in_array($front, ['next','react','vue','nuxt','svelte','angular','astro','remix','react_native'])
-            || in_array($back, ['node_express','supabase','firebase'])) {
-            $pkg = "$buildDir/package.json";
-            if (file_exists($pkg)) {
-                $cmds[] = ['name' => 'npm_install', 'cmd' => 'npm install --legacy-peer-deps 2>&1', 'cwd' => $buildDir, 'optional' => false];
-                $cmds[] = ['name' => 'npm_build',   'cmd' => 'npm run build 2>&1',  'cwd' => $buildDir, 'optional' => false];
-                // Try tsc check if typescript is present
-                $cmds[] = ['name' => 'tsc_check',   'cmd' => 'npx tsc --noEmit 2>&1', 'cwd' => $buildDir, 'optional' => true];
-                // Try lint
-                $cmds[] = ['name' => 'eslint',      'cmd' => 'npx eslint . --max-warnings 50 2>&1', 'cwd' => $buildDir, 'optional' => true];
+        $hasNode = in_array($front, ['next','react','vue','nuxt','svelte','angular','astro','remix','react_native'])
+            || in_array($back, ['node_express','supabase','firebase']);
+        if ($hasNode) {
+            // Detect package.json locations (root, backend/, frontend/)
+            $pkgDirs = [];
+            if (file_exists("$buildDir/package.json")) $pkgDirs[] = $buildDir;
+            if (file_exists("$buildDir/backend/package.json")) $pkgDirs[] = "$buildDir/backend";
+            if (file_exists("$buildDir/frontend/package.json")) $pkgDirs[] = "$buildDir/frontend";
+            foreach ($pkgDirs as $cwd) {
+                $label = $cwd === $buildDir ? 'root' : basename($cwd);
+                $cmds[] = ['name' => "npm_install_{$label}", 'cmd' => 'npm install --legacy-peer-deps 2>&1', 'cwd' => $cwd, 'optional' => false];
+                $cmds[] = ['name' => "npm_build_{$label}",   'cmd' => 'npm run build 2>&1',  'cwd' => $cwd, 'optional' => true];
+                $cmds[] = ['name' => "tsc_check_{$label}",   'cmd' => 'npx tsc --noEmit 2>&1', 'cwd' => $cwd, 'optional' => true];
+                $cmds[] = ['name' => "eslint_{$label}",      'cmd' => 'npx eslint . --max-warnings 50 2>&1', 'cwd' => $cwd, 'optional' => true];
             }
         }
 
@@ -1180,6 +1282,61 @@ class PipelineEngine {
         $buildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($this->projectFolder);
         $path = $buildDir . DIRECTORY_SEPARATOR . $filename;
         file_put_contents($path, $content, FILE_APPEND | LOCK_EX);
+    }
+
+    // ─── Agent de Réparation (1 appel API au lieu de regénérer tout) ──
+
+    private function runRepair(array $brief, array $stack, array $issues, array $buildErrors, array $existingFiles): array {
+        $this->log('ai', 'Repair Agent : Correction ciblée des ' . count($issues) . ' issues + ' . count($buildErrors) . ' erreurs build...');
+
+        // Build a compact summary of files with issues for the LLM
+        $fileSummary = [];
+        $issueFiles = [];
+        foreach ($issues as $iss) {
+            $fn = $iss['file'] ?? '';
+            if ($fn) $issueFiles[$fn] = true;
+        }
+        foreach ($buildErrors as $be) {
+            $out = $be['output'] ?? '';
+            if (preg_match_all('/^src\/(\S+\.tsx?)/m', $out, $m)) {
+                foreach ($m[1] as $fn) {
+                    $issueFiles['backend/src/' . $fn] = true;
+                }
+            }
+        }
+        foreach ($existingFiles as $f) {
+            $fn = $f['filename'] ?? '';
+            if (!isset($issueFiles[$fn]) && !str_starts_with($fn, '_build_errors')) continue;
+            $content = $f['content'] ?? '';
+            if (strlen($content) > 3000) $content = substr($content, 0, 3000) . "\n\n... [truncated]";
+            $fileSummary[] = [
+                'filename' => $fn,
+                'language' => $f['language'] ?? pathinfo($fn, PATHINFO_EXTENSION),
+                'current_content' => $content,
+            ];
+        }
+
+        $repairPrompt = "Tu es un ingénieur senior de correction de code. Tu reçois des issues QA et des erreurs de build.
+Corrige UNIQUEMENT les fichiers listés. Garde le reste du fichier intact.
+Réponds avec UNIQUEMENT les fichiers à modifier : {\"fixes\": [{\"filename\": \"...\", \"content\": \"fichier complet corrigé\"}]}";
+
+        $repairContent = $this->enrichContext('repair', [
+            'brief' => $brief,
+            'stack' => $stack,
+            'qa_issues' => $issues,
+            'build_errors' => $buildErrors,
+            'files_to_fix' => $fileSummary,
+        ]);
+
+        $messages = [
+            ['role' => 'system', 'content' => $repairPrompt],
+            ['role' => 'user', 'content' => json_encode($repairContent)],
+        ];
+        $res = $this->callWithRetry($messages, 16000, true, 'repair');
+        $fixes = $res['fixes'] ?? [];
+
+        $this->log('ok', 'Repair : ' . count($fixes) . ' fichiers corrigés');
+        return $fixes;
     }
 
     // ─── Agent DevOps ─────────────────────────────────────────────

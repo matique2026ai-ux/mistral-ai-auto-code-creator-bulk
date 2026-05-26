@@ -178,26 +178,21 @@ test('Boucle QA — déclenche réparation quand score < 95', function () use ($
             'build_errors' => [],
             'recommendations' => ['Add viewport meta'],
         ];
-        // Queue in PIPELINE ORDER: QA → repair(backend/frontend/qa) → devops
-        // So devops (index 6) must be queued AFTER repair responses
+        // Pipeline order: QA (70) → repair (1 call) → QA (98) → devops
         $devopsResponse = $responses[6];
         $responses[6] = [
-            'files' => [['filename' => 'api.php', 'content' => "<?php\necho 'fixed';", 'language' => 'php']],
-            'config_files' => [],
+            'fixes' => [
+                ['filename' => 'index.html', 'content' => '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width"><title>Test</title></head><body><h1>Fixed</h1></body></html>'],
+            ],
         ];
         $responses[7] = [
-            'filename' => 'index.html',
-            'content' => '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width"><title>Test</title></head><body><h1>Fixed</h1></body></html>',
-            'language' => 'html',
-        ];
-        $responses[8] = [
             'overall_score' => 98,
             'score' => 98,
             'issues' => [],
             'build_errors' => [],
             'recommendations' => [],
         ];
-        $responses[9] = $devopsResponse;
+        $responses[8] = $devopsResponse;
         foreach ($responses as $r) $mock->addResponse($r);
 
         $engine = new PipelineEngine($mock);

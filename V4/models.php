@@ -131,8 +131,8 @@ class AIModel {
             CURLOPT_POST => true,
             CURLOPT_TIMEOUT => 300,
             CURLOPT_CONNECTTIMEOUT => 30,
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => 0,
             CURLOPT_HTTPHEADER => $curlHeaders,
             CURLOPT_POSTFIELDS => json_encode($payload),
         ]);

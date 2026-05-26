@@ -81,11 +81,12 @@ php cli.php --prompt="Crée un blog" [options]
 ## Tests
 
 ```bash
-php tests/all.php   # 36 tests, 4 suites
+php tests/all.php   # 40 tests, 5 suites
 ```
 
 | Suite | Tests | Description |
 |-------|-------|-------------|
+| `tests/test_engine.php` | 4 | Pipeline IA : runCTO, runArchitect, runDesigner, runQA (mock) |
 | `tests/test_helpers.php` | 9 | validateProjectType, validateStackItem, slugify |
 | `tests/test_config.php` | 10 | Providers, agents, stacks, frontends, backends, langues, chemins |
 | `tests/test_queue.php` | 9 | enqueue, claim, complete, fail/retry, cancel, allDone |
@@ -117,19 +118,26 @@ Le QA loop injecte les issues détectées comme `$brief['qa_feedback']` dans les
 
 ## Dernier commit
 
-**V4.15** — `HEAD` — Worker daemon robuste (auto-scan + graceful shutdown)
+**V4.16** — `HEAD` — Correction prompts + engine pour builds blog réels validés
 
 ### Améliorations
-- **Mode daemon amélioré** : `php worker.php --daemon` sans project_id scanne automatiquement tous les projets en statut `building` dans la base, les exécute en séquence
-- **Graceful shutdown** : SIGINT/SIGTERM (Ctrl+C) proprement gérés sur Unix
-- **Boucle infinie** : plus de limite à 180 polls, tourne jusqu'à SIGINT
-- **Usage flexible** : `php worker.php <project_id>` (once), `php worker.php <project_id> --daemon` (projet spécifique), `php worker.php --daemon` (auto-scan)
-- **Logs horodatés** : daemon log toutes les 30 secondes qu'il attend
+- **`runRepair()` nouvel agent** : remplace la régénération complète backend+frontend (~15 appels API) par 1 appel repair unique qui reçoit les issues QA + fichiers et retourne uniquement les correctifs
+- **`runFrontend()` amélioré** : génération scaffolding via `config_files` (package.json, vite.config.ts, tsconfig.json, index.html), force `main.tsx` et `App.tsx` obligatoires
+- **`fixImportExportMismatch()` étendu** : gère `export { Name }` (named exports) et `import Name from` (default vs named mismatch)
+- **`detectBuildCommands()`** : détecte `package.json` dans `backend/` et `frontend/` en plus de la racine
+- **Prompts agents enrichis** : architect.md (folder séparé frontend/backend), backend.md (convention `.routes.ts`, règles TypeScript), frontend.md (React/Vite format, main.tsx/App.tsx obligatoires)
+- **`maxRepairIterations`** réduit de 3 à 2 (évite timeout build)
+- **Build blog validé** : backend compile (TypeScript → dist/), frontend compile (Vite 43 modules), serveur fonctionnel, login API ok
 
-### Fichiers impactés (V4.15)
+### Fichiers impactés (V4.16)
 | Fichier | Changements |
 |---------|-------------|
-| `worker.php` | runDaemon() refactoré, getNextPendingProject(), signals |
+| `engine.php` | runRepair(), runFrontend() refactoré, fixImportExportMismatch() étendu, detectBuildCommands() |
+| `agents/architect.md` | Folder séparé frontend/backend dans folder_structure |
+| `agents/backend.md` | Convention `.routes.ts`, règles TypeScript req.user, types |
+| `agents/frontend.md` | Format React/Vite avec config_files, main.tsx/App.tsx obligatoires |
+| `models.php` | Ajustements compatibilité repair agent |
+| `tests/test_engine.php` | Tests mis à jour pour nouveau flow repair |
 
 ---
 
