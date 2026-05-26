@@ -118,24 +118,26 @@ Le QA loop injecte les issues détectées comme `$brief['qa_feedback']` dans les
 
 ## Dernier commit
 
-**V4.16** — `HEAD` — Correction prompts + engine pour builds blog réels validés
+**V4.17** — `HEAD` — Prompts premium : Designer unique, upload image, compliance forcée
 
 ### Améliorations
-- **`runRepair()` nouvel agent** : remplace la régénération complète backend+frontend (~15 appels API) par 1 appel repair unique qui reçoit les issues QA + fichiers et retourne uniquement les correctifs
-- **`runFrontend()` amélioré** : génération scaffolding via `config_files` (package.json, vite.config.ts, tsconfig.json, index.html), force `main.tsx` et `App.tsx` obligatoires
+- **Designer.md réécrit** : palette UNIQUE obligatoire (interdiction des 3 palettes d'exemple), composant image upload dans le design system, 4 @keyframes minimum, Google Fonts premium imposées, glassmorphism + box-shadows profondes
+- **Frontend.md renforcé** : **SUIVRE LE DESIGNER À LA LETTRE** (couleurs, animations, polies — pas de style générique), composant `<ImageUpload>` avec drag & drop obligatoire, variables CSS extraites de la `color_palette` du designer
+- **Backend.md étendu** : endpoint `POST /api/upload` (multer, 5MB, jpg/png/webp/gif), champ `image_url` (STRING, nullable) sur le modèle Article, `GET /uploads/` statique, suppression image à la suppression article
+- **`runRepair()` nouvel agent** : remplace la régénération complète backend+frontend (~15 appels API) par 1 appel repair unique
+- **`runFrontend()` amélioré** : génération scaffolding via `config_files`, force `main.tsx` et `App.tsx` obligatoires
 - **`fixImportExportMismatch()` étendu** : gère `export { Name }` (named exports) et `import Name from` (default vs named mismatch)
 - **`detectBuildCommands()`** : détecte `package.json` dans `backend/` et `frontend/` en plus de la racine
-- **Prompts agents enrichis** : architect.md (folder séparé frontend/backend), backend.md (convention `.routes.ts`, règles TypeScript), frontend.md (React/Vite format, main.tsx/App.tsx obligatoires)
 - **`maxRepairIterations`** réduit de 3 à 2 (évite timeout build)
-- **Build blog validé** : backend compile (TypeScript → dist/), frontend compile (Vite 43 modules), serveur fonctionnel, login API ok
 
-### Fichiers impactés (V4.16)
+### Fichiers impactés (V4.17)
 | Fichier | Changements |
 |---------|-------------|
-| `engine.php` | runRepair(), runFrontend() refactoré, fixImportExportMismatch() étendu, detectBuildCommands() |
+| `agents/designer.md` | Réécriture complète : palette unique, image upload, premium components |
+| `agents/frontend.md` | Compliance designer forcée, ImageUpload composant, CSS variables |
+| `agents/backend.md` | Upload multer, image_url, suppression fichier |
 | `agents/architect.md` | Folder séparé frontend/backend dans folder_structure |
-| `agents/backend.md` | Convention `.routes.ts`, règles TypeScript req.user, types |
-| `agents/frontend.md` | Format React/Vite avec config_files, main.tsx/App.tsx obligatoires |
+| `engine.php` | runRepair(), runFrontend() refactoré, fixImportExportMismatch() étendu, detectBuildCommands() |
 | `models.php` | Ajustements compatibilité repair agent |
 | `tests/test_engine.php` | Tests mis à jour pour nouveau flow repair |
 
