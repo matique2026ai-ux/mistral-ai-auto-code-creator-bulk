@@ -1,42 +1,75 @@
 <?php
 /**
- * AkrourCoder V4 — Pipeline Engine
+ * AutoCoder V4 — Pipeline Engine
  * Orchestrateur multi-agents : CTO → Architect → Designer → Backend → Frontend → QA → DevOps
  */
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
-require_once __DIR__ . '/helpers.php';
-require_once __DIR__ . '/models.php';
 
 class PipelineEngine {
     private PDO $db;
-    private AIModel $ai;
     private int $projectId;
     private string $projectFolder;
+    private string $currentKey = '';
+    private int $currentKeyId = 0;
     private array $generatedFiles = [];
-    private array $searchCache = [];
+    private array $state = [];
 
-    public function __construct(?AIModel $ai = null) {
-        ini_set('memory_limit', '512M');
+    public function __construct() {
         $this->db = getDB();
-        $this->ai = $ai ?? new AIModel();
     }
 
-    public function setAI(AIModel $ai): void {
-        $this->ai = $ai;
-    }
+    // ─── API Mistral ──────────────────────────────────────────────────
 
-    // ─── API Multi-Provider (via AIModel router) ─────────────────────
+    private function callAI(array $messages, int $maxTokens = 4000, bool $jsonMode = true, string $step = ''): array {
+        $key = $this->getKey();
+        $payload = [
+            'model' => AC4_MODEL,
+            'messages' => $messages,
+            'max_tokens' => $maxTokens,
+        ];
+        if ($jsonMode) $payload['response_format'] = ['type' => 'json_object'];
 
-    private function callAI(array $messages, int $maxTokens = 4000, bool $jsonMode = true, string $step = '', int $depth = 0): array {
-        try {
-            return $this->ai->call($messages, $maxTokens, $jsonMode, $step);
-        } catch (\Exception $e) {
-            $this->log('err', "AI $step failed (depth $depth): " . $e->getMessage());
-            if ($depth >= 3) throw $e;
-            $this->log('warn', "Retry $step (depth " . ($depth + 1) . ")");
-            return $this->callAI($messages, $maxTokens, $jsonMode, $step, $depth + 1);
+        $ch = curl_init(AC4_API_URL);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_TIMEOUT => 300,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => 0,
+            CURLOPT_HTTPHEADER => [
+                'Authorization: Bearer ' . $this->currentKey,
+                'Content-Type: application/json',
+            ],
+            CURLOPT_POSTFIELDS => json_encode($payload),
+        ]);
+        $resp = curl_exec($ch);
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($code !== 200) {
+            markKeyError($this->db, $this->currentKeyId);
+            $this->getKey(); // retry with next key
+            $this->log('err', "HTTP $code - key rotated");
+            return $this->callAI($messages, $maxTokens, $jsonMode, $step); // retry
         }
+
+        $data = json_decode($resp, true);
+        $tokens = $data['usage']['total_tokens'] ?? 0;
+        recordTokens($this->db, $this->currentKeyId, $tokens, $this->projectId, $step);
+
+        return [
+            'content' => $data['choices'][0]['message']['content'],
+            'tokens' => $tokens,
+        ];
+    }
+
+    private function getKey(): array {
+        $k = getNextApiKey($this->db);
+        if (!$k) throw new Exception('Aucune clé API disponible');
+        $this->currentKey = $k['key_val'];
+        $this->currentKeyId = $k['id'];
+        return $k;
     }
 
     // ─── Logging ──────────────────────────────────────────────────────
@@ -90,214 +123,16 @@ class PipelineEngine {
         return file_exists($path) ? file_get_contents($path) : '';
     }
 
-    // ─── Mémoire & Recherche pour agents ─────────────────────────
-
-    private function enrichContext(string $agentName, array $baseContext): array {
-        $memories = getMemories($this->db, $agentName, 3);
-        if (!empty($memories)) {
-            $this->log('sys', "🧠 $agentName consulte ses expériences passées...");
-            $baseContext['past_memories'] = [];
-            foreach ($memories as $m) {
-                $baseContext['past_memories'][] = [
-                    'project' => $m['project_title'],
-                    'key_point' => $m['key_point'],
-                    'summary' => $m['summary'],
-                ];
-            }
-        }
-
-        $searchQuery = $this->buildSearchQuery($agentName, $baseContext);
-        if ($searchQuery) {
-            if (isset($this->searchCache[$searchQuery])) {
-                $webResults = $this->searchCache[$searchQuery];
-                $this->log('sys', "🔍 $agentName utilise le cache web : \"$searchQuery\"");
-            } else {
-                $this->log('sys', "🔍 $agentName recherche sur le web : \"$searchQuery\"...");
-                $webResults = webSearch($searchQuery, 3);
-                $this->searchCache[$searchQuery] = $webResults;
-            }
-            if (!empty($webResults)) {
-                $baseContext['web_research'] = $webResults;
-            }
-        }
-
-        return $baseContext;
-    }
-
-    private function buildSearchQuery(string $agent, array $context): string {
-        $title = $context['brief']['title'] ?? $context['brief']['master_prompt'] ?? $context['title'] ?? $context['master_prompt'] ?? '';
-        if (is_array($title)) $title = json_encode($title);
-        $title = substr(strip_tags($title), 0, 100);
-        $queries = [
-            'cto'       => "best tech stack for " . ($title ?: "web project") . " 2025 2026 trends",
-            'architect' => "best architecture patterns for " . ($title ?: "web application"),
-            'designer'  => "modern UI design trends 2025 2026 " . ($title ?: "website") . " award winning",
-            'backend'   => "backend best practices " . ($title ?: "API") . " 2025",
-            'frontend'  => "modern frontend animations UI trends 2025 " . ($title ?: "website"),
-            'qa'        => "common code quality issues web development 2025",
-            'devops'    => "Docker CI CD best practices 2025",
-        ];
-        return $queries[$agent] ?? '';
-    }
-
-    private function storeAgentMemory(string $agent, string $keyPoint, string $summary): void {
-        storeMemory($this->db, $this->projectId, $agent, $keyPoint, $summary);
-    }
-
     // ═══════════════════════════════════════════════════════════════════
     //  PIPELINE PRINCIPAL
     // ═══════════════════════════════════════════════════════════════════
 
-    public function runJob(int $projectId, string $jobName): array {
-        $this->projectId = $projectId;
-        $this->ai->setProjectId($projectId);
-        $stmt = $this->db->prepare("SELECT * FROM projects WHERE id = ?"); $stmt->execute([$projectId]);
-        $project = $stmt->fetch();
-        if (!$project) throw new \Exception("Project #$projectId not found");
-        $this->projectFolder = $project['folder'];
-
-        $brief = @json_decode($project['brief'], true) ?: [];
-        $brief['title'] = $project['title'];
-        $brief['project_id'] = $project['id'];
-        $brief['folder'] = $project['folder'];
-        $brief['frontend'] = $project['frontend'];
-        $brief['backend'] = $project['backend'];
-        $brief['database'] = $project['database'];
-        $brief['css_framework'] = $project['css_framework'];
-        $brief['project_type'] = $project['project_type'];
-
-        $stackDecision = @json_decode($project['stack_choice'], true) ?: [
-            'analysis' => ['project_type' => $project['project_type']],
-            'stack_decision' => [
-                'frontend' => $project['frontend'],
-                'backend' => $project['backend'],
-                'database' => $project['database'],
-                'css_framework' => $project['css_framework'],
-            ],
-        ];
-        $architecture = @json_decode($project['arch_json'], true) ?: [];
-        $designSystem = @json_decode($project['design_json'], true) ?: [];
-
-        return match ($jobName) {
-            'cto' => $this->runJobStepCTO($brief, $stackDecision),
-            'architect' => $this->runJobStepArchitect($brief, $stackDecision),
-            'designer' => $this->runJobStepDesigner($brief, $stackDecision, $architecture),
-            'backend' => $this->runJobStepBackend($brief, $stackDecision, $architecture, $designSystem),
-            'frontend' => $this->runJobStepFrontend($brief, $stackDecision, $architecture, $designSystem),
-            'qa' => $this->runJobStepQA($brief, $stackDecision, $project, $architecture, $designSystem),
-            'devops' => $this->runJobStepDevOps($brief, $stackDecision, $architecture),
-            default => throw new \Exception("Unknown job: $jobName"),
-        };
-    }
-
-    private function runJobStepCTO(array $brief, array &$stackDecision): array {
-        $this->progress(5, 'CTO : Analyse du besoin & sélection de la stack...');
-        $this->log('ai', 'Agent CTO : Analyse du projet...');
-        $stackDecision = $this->runCTO($brief);
-        updateProject($this->db, $this->projectId, [
-            'project_type' => $stackDecision['analysis']['project_type'],
-            'frontend' => $stackDecision['stack_decision']['frontend'],
-            'backend' => $stackDecision['stack_decision']['backend'],
-            'database' => $stackDecision['stack_decision']['database'],
-            'css_framework' => $stackDecision['stack_decision']['css_framework'],
-            'stack_choice' => json_encode($stackDecision),
-        ]);
-        $this->log('ok', "Stack choisie : {$stackDecision['stack_decision']['frontend']} + {$stackDecision['stack_decision']['backend']} + {$stackDecision['stack_decision']['database']}");
-        return $stackDecision;
-    }
-
-    private function runJobStepArchitect(array $brief, array $stackDecision): array {
-        $this->progress(15, 'Architecte : Conception de l\'architecture...');
-        $this->log('ai', 'Agent Architecte : Design du système...');
-        $architecture = $this->runArchitect($brief, $stackDecision);
-        updateProject($this->db, $this->projectId, ['arch_json' => json_encode($architecture)]);
-        $this->log('ok', "Architecture : {$architecture['site_name']} — " . count($architecture['frontend_pages']) . " pages, " . count($architecture['api_endpoints']) . " API");
-        return $architecture;
-    }
-
-    private function runJobStepDesigner(array $brief, array $stackDecision, array $architecture): array {
-        $this->progress(28, 'Designer : Création du design system premium...');
-        $this->log('ai', 'Agent Designer : Design du système visuel...');
-        $designSystem = $this->runDesigner($brief, $stackDecision, $architecture);
-        updateProject($this->db, $this->projectId, ['design_json' => json_encode($designSystem)]);
-        $this->log('ok', 'Design system créé — composants, couleurs, animations');
-        return $designSystem;
-    }
-
-    private function runJobStepBackend(array $brief, array $stackDecision, array $architecture, array $designSystem): array {
-        $this->progress(40, 'Développeur Backend : Génération des APIs...');
-        $this->log('ai', 'Agent Backend : Génération du code serveur...');
-        $backendResult = $this->runBackend($brief, $stackDecision, $architecture, $designSystem);
-        foreach (($backendResult['files'] ?? []) as $f) $this->writeFile($f['filename'], $f['content']);
-        foreach (($backendResult['config_files'] ?? []) as $f) $this->writeFile($f['filename'], $f['content']);
-        $this->log('ok', 'Backend généré : ' . (count($backendResult['files'] ?? []) + count($backendResult['config_files'] ?? [])) . " fichiers");
-        return $backendResult;
-    }
-
-    private function runJobStepFrontend(array $brief, array $stackDecision, array $architecture, array $designSystem): array {
-        $this->progress(58, 'Développeur Frontend : Génération des interfaces...');
-        $this->log('ai', 'Agent Frontend : Génération du code UI...');
-        $backendResult = ['files' => [], 'config_files' => []];
-        $result = $this->runFrontend($brief, $stackDecision, $architecture, $designSystem, $backendResult);
-        return $result;
-    }
-
-    private function runJobStepQA(array $brief, array $stackDecision, array $project, array $architecture = [], array $designSystem = []): array {
-        $this->progress(75, 'QA Engineer : Inspection + Build + Correction...');
-        $this->log('test', 'Agent QA : Validation du code avec boucle de correction...');
-        $buildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($this->projectFolder);
-        $existing = $this->scanFiles($buildDir);
-        $qaResult = $this->qaFixLoop($brief, $stackDecision, $existing);
-        $score = $qaResult['overall_score'] ?? 0;
-
-        // Repair loop: use a single repair agent call instead of regenerating everything
-        $maxRepairIterations = 2;
-        for ($repair = 0; $repair < $maxRepairIterations; $repair++) {
-            if ($score >= 95) break;
-
-            $buildErrors = $qaResult['build_errors'] ?? [];
-            $issues = $qaResult['issues'] ?? [];
-            if (empty($buildErrors) && empty($issues)) break;
-
-            $this->log('sys', "🔧 Réparation #" . ($repair + 1) . ": correction ciblée des " . count($issues) . " issues...");
-
-            $fixes = $this->runRepair($brief, $stackDecision, $issues, $buildErrors, $existing);
-            foreach ($fixes as $f) {
-                $this->writeFile($f['filename'], $f['content']);
-            }
-
-            $existing = $this->scanFiles($buildDir);
-            $qaResult = $this->qaFixLoop($brief, $stackDecision, $existing);
-            $score = $qaResult['overall_score'] ?? 0;
-        }
-
-        updateProject($this->db, $this->projectId, ['qa_score' => $score, 'file_count' => count($existing), 'build_validated' => ($qaResult['build_success'] ?? false) ? 1 : 0]);
-        $this->log('test', "Score qualité final : $score/100");
-        return $qaResult;
-    }
-
-    private function runJobStepDevOps(array $brief, array $stackDecision, array $architecture): array {
-        $this->progress(90, 'DevOps : Préparation du déploiement...');
-        $this->log('ai', 'Agent DevOps : Configuration de l\'infrastructure...');
-        $devopsResult = $this->runDevOps($brief, $stackDecision, $architecture);
-        foreach (($devopsResult['files'] ?? []) as $f) $this->writeFile($f['filename'], $f['content']);
-        $this->log('ok', 'DevOps prêt : Docker + CI/CD générés');
-        updateProject($this->db, $this->projectId, ['status' => 'done']);
-        $this->progress(100, '✅ Projet terminé !');
-        $this->log('ok', '═══════════════════════════════════════════════════');
-        $this->log('ok', "✅ PROJET TERMINÉ — DevOps finalisé");
-        $this->log('ok', "📁 Dossier : builds/" . basename($this->projectFolder));
-        $this->log('ok', '═══════════════════════════════════════════════════');
-        return $devopsResult;
-    }
-
     public function run(array $brief): array {
         $this->projectId = $brief['project_id'];
-        $this->ai->setProjectId($this->projectId);
         $this->projectFolder = $brief['folder'];
 
         $this->log('sys', '═══════════════════════════════════════════════════');
-        $this->log('sys', '🤖 AkrourCoder V4 — 7 AGENTS SPÉCIALISÉS PRÊTS');
+        $this->log('sys', '🤖 AutoCoder V4 — 7 AGENTS SPÉCIALISÉS PRÊTS');
         $this->log('sys', '═══════════════════════════════════════════════════');
 
         try {
@@ -357,30 +192,21 @@ class PipelineEngine {
 
             $allFiles = array_merge($backendFiles, $configFiles, $frontendResult['files'] ?? []);
             $qaResult = $this->qaFixLoop($brief, $stackDecision, $allFiles);
+
             $score = $qaResult['overall_score'] ?? 0;
             $buildSuccess = $qaResult['build_success'] ?? false;
+            $iterations = $qaResult['iterations'] ?? 1;
 
-            for ($repair = 0; $repair < 2; $repair++) {
-                if ($score >= 95) break;
-                $issues = $qaResult['issues'] ?? [];
-                $buildErrors = $qaResult['build_errors'] ?? [];
-                if (empty($issues) && empty($buildErrors)) break;
+            $this->log('test', "Score qualité : $score/100 (itérations : $iterations)");
+            $this->log('test', "Problèmes : " . count($qaResult['issues'] ?? []) . ", Corrections : " . count($qaResult['fixes'] ?? []));
+            $this->log('test', "Build : " . ($buildSuccess ? '✅ RÉUSSI' : '❌ ÉCHEC'));
 
-                $this->log('sys', "🔧 Réparation #" . ($repair + 1) . " ({$score}/100, " . count($issues) . " issues)...");
-
-                $allFiles = $this->scanFiles(AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($this->projectFolder));
-                $fixes = $this->runRepair($brief, $stackDecision, $issues, $buildErrors, $allFiles);
-                foreach ($fixes as $f) {
-                    $this->writeFile($f['filename'], $f['content']);
+            if (!empty($qaResult['build_errors'])) {
+                $this->log('warn', "⚠ Erreurs de build persistantes : " . count($qaResult['build_errors']));
+                foreach (array_slice($qaResult['build_errors'], 0, 10) as $be) {
+                    $this->log('warn', "  " . substr($be, 0, 200));
                 }
-
-                $allFiles = $this->scanFiles(AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($this->projectFolder));
-                $qaResult = $this->qaFixLoop($brief, $stackDecision, $allFiles);
-                $score = $qaResult['overall_score'] ?? 0;
-                $buildSuccess = $qaResult['build_success'] ?? false;
             }
-
-            $this->log('test', "Score qualité final : $score/100, Build : " . ($buildSuccess ? '✅' : '❌'));
 
             updateProject($this->db, $this->projectId, [
                 'qa_score' => $score,
@@ -428,14 +254,14 @@ class PipelineEngine {
 
     public function resume(array $project): array {
         $this->projectId = $project['id'];
-        $this->ai->setProjectId($this->projectId);
         $this->projectFolder = $project['folder'];
 
         $this->log('sys', '═══════════════════════════════════════════════════');
-        $this->log('sys', '🔄 Reprise build #' . $project['id'] . ' (API-free)');
+        $this->log('sys', '🔄 Reprise du build #' . $project['id']);
         $this->log('sys', '═══════════════════════════════════════════════════');
 
         try {
+            // Reconstruct stack decision and architecture from DB
             $stackDecision = [
                 'analysis' => ['project_type' => $project['project_type'] ?? 'fullstack'],
                 'stack_decision' => [
@@ -449,50 +275,86 @@ class PipelineEngine {
 
             $this->log('ok', 'Stack: ' . $stackDecision['stack_decision']['frontend'] . ' + ' . $stackDecision['stack_decision']['backend'] . ' + ' . $stackDecision['stack_decision']['database']);
 
+            // Brief context
+            $brief = @json_decode($project['brief'], true) ?: [];
+            $brief['title'] = $project['title'];
+            $brief['project_id'] = $project['id'];
+            $brief['folder'] = $project['folder'];
+
             // Load existing files from disk
             $buildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($project['folder']);
             $existingFiles = $this->scanFiles($buildDir);
-            $this->log('ok', 'Fichiers sur disque : ' . count($existingFiles));
 
-            // ── RUN BUILD VALIDATION ONLY (no API calls) ──────────
-            $this->progress(75, 'Validation build...');
-            $this->log('test', 'Validation du code existant...');
+            // Regenerate design system (not stored in DB)
+            $this->progress(65, 'Designer (cache)');
+            $this->log('ai', 'Regénération du design system...');
+            $designSystem = $this->runDesigner($brief, $stackDecision, $architecture);
 
-            $buildResult = $this->runBuildValidation($stackDecision);
-            $importErrors = $this->validateFileImports($existingFiles);
-            $buildOk = $buildResult['success'] && empty($importErrors);
-            $score = $buildOk ? 100 : 85;
+            // Regenerate backend result (needed for frontend context)
+            $this->progress(70, 'Backend (cache)');
+            $this->log('ai', 'Reconstitution du contexte backend...');
+            $backendResult = $this->runBackendBrief($architecture);
 
-            $errorSummary = [];
-            foreach (($buildResult['errors'] ?? []) as $be) {
-                if ($be['command'] === 'eslint') continue;
-                $errorSummary[] = "[{$be['command']}] {$be['output']}";
+            // Check if frontend files exist; if not, regenerate them
+            $hasFrontend = false;
+            $feExtensions = ['.html', '.htm', '.jsx', '.tsx', '.vue', '.svelte', '.astro', '.dart', '.kt', '.swift'];
+            foreach ($existingFiles as $f) {
+                $ext = '.' . ($f['language'] ?? '');
+                if (in_array($ext, $feExtensions)) { $hasFrontend = true; break; }
             }
-            foreach ($importErrors as $ie) {
-                $errorSummary[] = "[import] {$ie['file']}: {$ie['issue']}";
+
+            if (!$hasFrontend && $stackDecision['stack_decision']['frontend'] !== 'none') {
+                $this->progress(72, 'Frontend (régénération fichiers manquants)...');
+                $this->log('ai', 'Aucun fichier frontend trouvé — regénération...');
+                $frontendResult = $this->runFrontend($brief, $stackDecision, $architecture, $designSystem, $backendResult);
+                $existingFiles = $this->scanFiles($buildDir); // Re-scan after generation
+                $this->log('ok', 'Frontend regénéré : ' . count($frontendResult['files'] ?? []) . ' fichiers');
+            } else {
+                $this->log('ok', 'Frontend déjà présent, reprise directe');
             }
 
-            if (!empty($errorSummary)) {
-                $this->log('warn', "⚠ " . count($errorSummary) . " problèmes détectés :");
-                foreach (array_slice($errorSummary, 0, 10) as $e) {
-                    $this->log('warn', "  " . substr($e, 0, 200));
+            // ── ÉTAPE 6: QA — Validation + Build + Fix Loop ────────
+            $this->progress(75, 'QA Engineer : Inspection + Build + Correction (max 3 itérations)...');
+            $this->log('test', 'Agent QA : Validation du code avec boucle de correction...');
+
+            $qaResult = $this->qaFixLoop($brief, $stackDecision, $existingFiles);
+
+            $score = $qaResult['overall_score'] ?? 0;
+            $buildSuccess = $qaResult['build_success'] ?? false;
+            $iterations = $qaResult['iterations'] ?? 1;
+
+            $this->log('test', "Score qualité : $score/100 (itérations : $iterations)");
+            $this->log('test', "Problèmes : " . count($qaResult['issues'] ?? []) . ", Corrections : " . count($qaResult['fixes'] ?? []));
+            $this->log('test', "Build : " . ($buildSuccess ? '✅ RÉUSSI' : '❌ ÉCHEC'));
+
+            if (!empty($qaResult['build_errors'])) {
+                $this->log('warn', "⚠ Erreurs de build persistantes : " . count($qaResult['build_errors']));
+                foreach (array_slice($qaResult['build_errors'], 0, 10) as $be) {
+                    $this->log('warn', "  " . substr($be, 0, 200));
                 }
             }
-
-            $this->log('test', "Build : " . ($buildOk ? '✅ RÉUSSI' : '❌ ÉCHEC'));
-            $this->log('test', "Score qualité estimé : $score/100");
 
             updateProject($this->db, $this->projectId, [
                 'qa_score' => $score,
                 'file_count' => count($existingFiles),
-                'build_validated' => $buildOk ? 1 : 0,
+                'build_validated' => $buildSuccess ? 1 : 0,
             ]);
 
+            // ── ÉTAPE 7: DevOps ─────────────────────────────────────
+            $this->progress(90, 'DevOps : Préparation du déploiement...');
+            $this->log('ai', 'Agent DevOps : Configuration infrastructure...');
+            $devopsResult = $this->runDevOps($brief, $stackDecision, $architecture);
+
+            foreach (($devopsResult['files'] ?? []) as $f) $this->writeFile($f['filename'], $f['content']);
+            $this->log('ok', 'DevOps prêt : Docker + CI/CD générés');
+
+            // Finalisation
+            $this->generateReadme($architecture, $stackDecision, $score);
             updateProject($this->db, $this->projectId, ['status' => 'done']);
 
-            $this->progress(100, $buildOk ? '✅ Projet terminé !' : '❌ Build échoué');
+            $this->progress(100, '✅ Projet terminé !');
             $this->log('ok', '═══════════════════════════════════════════════════');
-            $this->log('ok', "✅ REPRISE TERMINÉE — Statut : " . ($buildOk ? 'OK' : 'ÉCHEC'));
+            $this->log('ok', "✅ REPRISE TERMINÉE — Score QA : $score/100");
             $this->log('ok', "📁 Dossier : builds/" . basename($this->projectFolder));
             $this->log('ok', "📦 Fichiers : " . count($existingFiles));
             $this->log('ok', '═══════════════════════════════════════════════════');
@@ -508,19 +370,7 @@ class PipelineEngine {
     private function scanFiles(string $dir): array {
         $files = [];
         if (!is_dir($dir)) return $files;
-        $excludeDirs = ['node_modules', '.next', '.git', 'vendor', '.cache', '__pycache__', '.venv', 'target'];
-        $iterator = new RecursiveIteratorIterator(
-            new RecursiveCallbackFilterIterator(
-                new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS),
-                function ($current, $key, $iterator) use ($excludeDirs) {
-                    if ($current->isDir() && in_array($current->getBasename(), $excludeDirs, true)) {
-                        return false; // Skip excluded dirs entirely
-                    }
-                    return true;
-                }
-            ),
-            RecursiveIteratorIterator::SELF_FIRST
-        );
+        $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS));
         foreach ($iterator as $file) {
             if ($file->isFile()) {
                 $relPath = str_replace($dir . DIRECTORY_SEPARATOR, '', $file->getPathname());
@@ -592,15 +442,11 @@ class PipelineEngine {
             ];
         }
 
-        $userContent = $this->enrichContext('cto', $userContent);
-
         $messages = [
             ['role' => 'system', 'content' => $prompt],
             ['role' => 'user', 'content' => json_encode($userContent)],
         ];
         $decision = $this->callWithRetry($messages, 16000, true, 'cto');
-        $ctoSummary = is_string($decision['analysis']['reasoning'] ?? null) ? $decision['analysis']['reasoning'] : (is_array($decision['analysis']['reasoning'] ?? null) ? json_encode($decision['analysis']['reasoning']) : '');
-        $this->storeAgentMemory('cto', 'Stack choisie: ' . ($decision['stack_decision']['frontend'] ?? '') . '+' . ($decision['stack_decision']['backend'] ?? ''), $ctoSummary);
 
         // If user provided explicit values in advanced mode, override AI choices
         if ($hasMasterPrompt && !empty($brief['frontend'])) {
@@ -619,37 +465,29 @@ class PipelineEngine {
 
     private function runArchitect(array $brief, array $stack): array {
         $prompt = $this->loadAgentPrompt('architect');
-        $userContent = $this->enrichContext('architect', [
-            'brief' => $brief,
-            'stack' => $stack,
-        ]);
         $messages = [
             ['role' => 'system', 'content' => $prompt],
-            ['role' => 'user', 'content' => json_encode($userContent)],
+            ['role' => 'user', 'content' => json_encode([
+                'brief' => $brief,
+                'stack' => $stack,
+            ])],
         ];
-        $res = $this->callWithRetry($messages, 16000, true, 'architect');
-        $this->storeAgentMemory('architect', 'Architecture: ' . ($res['architecture_pattern'] ?? '') . ', ' . count($res['frontend_pages'] ?? []) . ' pages, ' . count($res['database_schema']['tables'] ?? []) . ' tables', json_encode($res['architecture_decisions'] ?? []));
-        return $res;
+        return $this->callWithRetry($messages, 16000, true, 'architect');
     }
 
     // ─── Agent Designer ───────────────────────────────────────────
 
     private function runDesigner(array $brief, array $stack, array $arch): array {
         $prompt = $this->loadAgentPrompt('designer');
-        $userContent = $this->enrichContext('designer', [
-            'brief' => $brief,
-            'stack' => $stack,
-            'architecture' => $arch,
-        ]);
         $messages = [
             ['role' => 'system', 'content' => $prompt],
-            ['role' => 'user', 'content' => json_encode($userContent)],
+            ['role' => 'user', 'content' => json_encode([
+                'brief' => $brief,
+                'stack' => $stack,
+                'architecture' => $arch,
+            ])],
         ];
-        $res = $this->callWithRetry($messages, 16000, true, 'designer');
-        $dKey = is_array($res['design_tokens'] ?? null) ? ($res['design_tokens']['primary_color'] ?? '') : ((is_string($res['design_tokens'] ?? null) ? substr($res['design_tokens'], 0, 60) : ''));
-        $dRationale = is_string($res['design_rationale'] ?? null) ? $res['design_rationale'] : (is_array($res['design_rationale'] ?? null) ? json_encode($res['design_rationale']) : '');
-        $this->storeAgentMemory('designer', 'Design: palette ' . $dKey, $dRationale);
-        return $res;
+        return $this->callWithRetry($messages, 16000, true, 'designer');
     }
 
     private function callWithRetry(array $messages, int $maxTokens, bool $jsonMode, string $step, int $attempts = 2): array {
@@ -671,124 +509,18 @@ class PipelineEngine {
 
     private function runBackend(array $brief, array $stack, array $arch, array $design): array {
         $prompt = $this->loadAgentPrompt('backend');
-        $userContent = $this->enrichContext('backend', [
-            'brief' => $brief,
-            'stack' => $stack,
-            'architecture' => $arch,
-            'design_system' => $design,
-            'tables' => $arch['database_schema']['tables'] ?? [],
-            'endpoints' => $arch['api_endpoints'] ?? [],
-        ]);
         $messages = [
             ['role' => 'system', 'content' => $prompt],
-            ['role' => 'user', 'content' => json_encode($userContent)],
+            ['role' => 'user', 'content' => json_encode([
+                'brief' => $brief,
+                'stack' => $stack,
+                'architecture' => $arch,
+                'design_system' => $design,
+                'tables' => $arch['database_schema']['tables'] ?? [],
+                'endpoints' => $arch['api_endpoints'] ?? [],
+            ])],
         ];
-        $res = $this->callWithRetry($messages, 32000, true, 'backend');
-        $this->storeAgentMemory('backend', count($res['files'] ?? []) . ' fichiers backend générés', json_encode(array_keys($res['files'] ?? [])));
-        $this->fixImportExportMismatch($res['files'] ?? []);
-        return $res;
-    }
-
-    private function fixImportExportMismatch(array $files): void {
-        $buildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($this->projectFolder);
-
-        // Build export map: filename => { default: ?string, named: string[] }
-        $exportMap = [];
-        foreach ($files as $f) {
-            $content = $f['content'] ?? '';
-            $default = null;
-            $named = [];
-            if (preg_match('/export\s+default\s+(?:class|function|const|let|var|interface|type|abstract\s+class)\s+(\w+)/', $content, $m)) {
-                $default = $m[1];
-                $named[] = $m[1];
-            }
-            preg_match_all('/export\s+(?:const|function|let|var|class|async\s+function|interface|type)\s+(\w+)/', $content, $m);
-            $named = array_merge($named, $m[1] ?? []);
-            // export { Name1, Name2 }
-            if (preg_match('/export\s*\{\s*([^}]+)\s*\}/', $content, $em)) {
-                foreach (explode(',', $em[1]) as $part) {
-                    $part = trim(preg_replace('/\s+as\s+\w+/', '', $part));
-                    if ($part) $named[] = $part;
-                }
-            }
-            $exportMap[$f['filename']] = ['default' => $default, 'named' => array_unique($named)];
-        }
-        if (empty($exportMap)) return;
-
-        foreach ($files as $f) {
-            $content = $f['content'] ?? '';
-            $changed = false;
-
-            // Find all local imports: import ... from 'relpath'
-            preg_match_all('/import\s+(?:\{\s*([^}]+)\s*\}|(\w+))\s+from\s+[\'"](\.\.?\/[^\'"]+)[\'"]/', $content, $imports, PREG_SET_ORDER);
-            foreach ($imports as $imp) {
-                $importPath = $imp[3];
-                $namedImport = trim($imp[1] ?? '');
-                $defaultImport = trim($imp[2] ?? '');
-                if (!$defaultImport && !$namedImport) continue;
-
-                // Resolve which file this import points to
-                $resolved = $this->resolveImportPathForFix($f['filename'], $importPath, $buildDir);
-                if (!$resolved || !isset($exportMap[$resolved])) continue;
-
-                $target = $exportMap[$resolved];
-
-                // Case 1: import { Name } but target has export default Name → switch to default import
-                if ($namedImport && $target['default']) {
-                    $names = array_map('trim', explode(',', $namedImport));
-                    foreach ($names as $n) {
-                        $n = preg_replace('/\s+as\s+\w+/', '', $n);
-                        if ($n === $target['default']) {
-                            $content = preg_replace(
-                                '/import\s*\{\s*' . preg_quote($target['default'], '/') . '\s*\}\s*from\s*([\'"])/',
-                                'import ' . $target['default'] . ' from $1',
-                                $content
-                            );
-                            $changed = true;
-                            $this->log('fix', "Import corrigé: {$f['filename']} → import {$target['default']} (export default dans {$resolved})");
-                        }
-                    }
-                }
-
-                // Case 2: import Name but target doesn't have default (only named exports) → switch to named import
-                if ($defaultImport && !$target['default'] && in_array($defaultImport, $target['named'])) {
-                    $content = preg_replace(
-                        '/import\s+' . preg_quote($defaultImport, '/') . '\s+from\s*([\'"])/',
-                        'import { ' . $defaultImport . ' } from $1',
-                        $content
-                    );
-                    $changed = true;
-                    $this->log('fix', "Import corrigé: {$f['filename']} → import {{$defaultImport}} (export nommé dans {$resolved})");
-                }
-            }
-
-            if ($changed) {
-                $filepath = $buildDir . DIRECTORY_SEPARATOR . $f['filename'];
-                $dir = dirname($filepath);
-                if (!is_dir($dir)) mkdir($dir, 0755, true);
-                file_put_contents($filepath, $content);
-            }
-        }
-    }
-
-    private function resolveImportPathForFix(string $sourceFile, string $importPath, string $buildDir): ?string {
-        $sourceDir = str_replace('\\', '/', dirname($sourceFile));
-        $importPath = str_replace('\\', '/', $importPath);
-        $parts = explode('/', $sourceDir);
-        foreach (explode('/', $importPath) as $part) {
-            if ($part === '.') continue;
-            if ($part === '..') { if (count($parts)) array_pop($parts); continue; }
-            $parts[] = $part;
-        }
-        $resolved = implode('/', $parts);
-        $extensions = ['.ts', '.tsx', '.js', '.jsx', '.vue', '.svelte'];
-        foreach ($extensions as $ext) {
-            $c = $resolved . $ext;
-            if (isset($this->generatedFiles) && in_array($c, $this->generatedFiles)) return $c;
-        }
-        $c = $resolved . DIRECTORY_SEPARATOR . 'index.ts';
-        if (isset($this->generatedFiles) && in_array($c, $this->generatedFiles)) return $c;
-        return null;
+        return $this->callWithRetry($messages, 32000, true, 'backend');
     }
 
     // ─── Agent Frontend (fichier par fichier) ────────────────────
@@ -799,31 +531,11 @@ class PipelineEngine {
         // Step 1: Plan — liste des fichiers uniquement
         $this->log('ai', 'Frontend: Planification des fichiers...');
 
-        $prompt = $this->loadAgentPrompt('frontend');
-        $allFiles = [];
-        $allConfigFiles = [];
-
         // For static HTML, always generate 1 file
         if ($feType === 'html_css_js') {
-            $this->progress(60, 'Frontend: index.html...');
-            $this->log('ai', 'Frontend: génération index.html complet...');
-            $feContent = $this->enrichContext('frontend', [
-                'brief' => $brief, 'stack' => $stack, 'architecture' => $arch,
-                'design_system' => $design, 'backend' => $backend,
-                'pages' => $arch['frontend_pages'] ?? [],
-            ]);
-            $fileMsg = [
-                ['role' => 'system', 'content' => $prompt . "\n\nGénère un fichier HTML unique. Réponse JSON : {\"filename\":\"index.html\",\"content\":\"...\",\"language\":\"html\"}"],
-                ['role' => 'user', 'content' => json_encode($feContent)],
-            ];
-            $res = $this->callWithRetry($fileMsg, 8000, true, 'frontend-file');
-            $content = $res['content'] ?? '';
-            if ($content) {
-                $this->writeFile('index.html', $content);
-                $allFiles[] = ['filename' => 'index.html', 'content' => $content, 'language' => 'html'];
-            }
+            $fileList = [['filename' => 'index.html', 'description' => 'Page principale unique HTML + CSS inline + JS']];
+            $this->log('ok', 'Frontend: site statique — 1 fichier (index.html)');
         } else {
-            // Step 1: Generate config scaffolding first (package.json, vite.config.ts, index.html, etc.)
             $frontendLabel = match ($feType) {
                 'react', 'vite' => 'React + Vite',
                 'next' => 'Next.js 14',
@@ -833,78 +545,60 @@ class PipelineEngine {
                 'swiftui' => 'SwiftUI',
                 default => $feType,
             };
-            $this->log('ai', "Frontend: génération du scaffolding {$frontendLabel}...");
-            $this->progress(55, 'Frontend: configuration du framework...');
-            $scaffoldContent = $this->enrichContext('frontend', [
-                'brief' => $brief, 'stack' => $stack, 'architecture' => $arch,
-                'design_system' => $design, 'backend' => $backend,
-                'pages' => $arch['frontend_pages'] ?? [],
-                'task' => 'generate_config_scaffolding',
-            ]);
-            $feScaffoldExt = in_array($feType, ['react', 'vite', 'next', 'vue']) ? '.tsx' : '.jsx';
-            $scaffoldMsg = [
-                ['role' => 'system', 'content' => $prompt . "\n\nGénère UNIQUEMENT les fichiers de configuration (config_files) pour un projet {$frontendLabel}. IMPORTANT : l'index.html doit importer '/src/main{$feScaffoldExt}' dans le script module (pas main.jsx). Réponse JSON : {\"config_files\":[{\"filename\":\"package.json\",\"content\":\"...\"},{\"filename\":\"vite.config.ts\",\"content\":\"...\"},{\"filename\":\"index.html\",\"content\":\"...\"}]}. Ne mets PAS de composants UI ici."],
-                ['role' => 'user', 'content' => json_encode($scaffoldContent)],
-            ];
-            $scaffoldRes = $this->callWithRetry($scaffoldMsg, 5000, true, 'frontend-scaffold');
-            $configFiles = $scaffoldRes['config_files'] ?? [];
-            foreach ($configFiles as $cf) {
-                $this->writeFile($cf['filename'], $cf['content']);
-                $allConfigFiles[] = $cf;
-            }
-            $this->log('ok', 'Frontend: ' . count($configFiles) . ' fichiers de configuration générés');
-
-            // Step 2: Plan — liste des composants UI
-            $this->log('ai', "Frontend: planification des composants...");
             $planMessages = [
-                ['role' => 'system', 'content' => "Tu listes les fichiers composants UI nécessaires pour un projet {$frontendLabel}. MAXIMUM 8 fichiers. Réponse JSON : {\"files\":[{\"filename\":\"...\",\"description\":\"...\"}]}. AUCUN CODE. Ne mets PAS les fichiers de config (package.json, vite.config.ts, index.html, tsconfig.json)."],
+                ['role' => 'system', 'content' => "Tu listes les fichiers nécessaires pour un projet {$frontendLabel}. MAXIMUM 5 fichiers. Réponse JSON : {\"files\":[{\"filename\":\"...\",\"description\":\"...\"}]}. AUCUN CODE. Garde le plan minimal (1 fichier = 1 composant, regroupe tout le nécessaire)."],
                 ['role' => 'user', 'content' => json_encode([
                     'project' => $brief['master_prompt'] ?? $brief['title'] ?? '',
                     'stack' => $stack['stack_decision'] ?? [],
                     'pages' => $arch['frontend_pages'] ?? [],
-                    'already_generated' => array_column($configFiles, 'filename'),
                 ])],
             ];
-            $plan = $this->callWithRetry($planMessages, 2000, true, 'frontend-plan');
+            $plan = $this->callWithRetry($planMessages, 1500, true, 'frontend-plan');
             $fileList = $plan['files'] ?? [];
             if (empty($fileList)) throw new Exception('Frontend: plan vide');
+            $this->log('ok', 'Frontend: ' . count($fileList) . ' fichiers à générer');
+        }
 
-            // Force essential entry files for React/Vite if missing
-            $feFileExt = in_array($feType, ['react', 'vite', 'next', 'vue']) ? '.tsx' : '.jsx';
-            $essentialFiles = [
-                "frontend/src/main{$feFileExt}",
-                "frontend/src/App{$feFileExt}",
-            ];
-            $plannedFilenames = array_map(fn($f) => $f['filename'] ?? '', $fileList);
-            foreach (array_reverse($essentialFiles) as $ef) {
-                if (!in_array($ef, $plannedFilenames)) {
-                    $desc = str_contains($ef, 'main') ? 'Point d\'entrée React' : 'Composant racine App';
-                    array_unshift($fileList, ['filename' => $ef, 'description' => $desc]);
-                    $this->log('sys', "Ajout forcé: {$ef} ({$desc})");
-                }
-            }
+        // Step 2: Génération
+        $prompt = $this->loadAgentPrompt('frontend');
+        $allFiles = [];
+        $total = count($fileList);
 
-            $this->log('ok', 'Frontend: ' . count($fileList) . ' composants à générer');
-
-            // Step 3: Generate each component file
-            $total = count($fileList);
-            foreach ($fileList as $i => $fileDef) {
-                $this->progress(60 + intval(25 * $i / $total), "Frontend: composant " . ($i + 1) . "/{$total}");
-                $filename = $fileDef['filename'] ?? "f{$i}.tsx";
-                $this->log('ai', "Frontend [{$i}/{$total}]: {$filename}...");
-                $feContent = $this->enrichContext('frontend', [
+        if ($feType === 'html_css_js') {
+            // Static HTML: generate all content in a single API call
+            $this->progress(60, 'Frontend: index.html...');
+            $this->log('ai', 'Frontend: génération index.html complet...');
+            $fileMsg = [
+                ['role' => 'system', 'content' => $prompt . "\n\nGénère un fichier HTML unique. Réponse JSON : {\"filename\":\"index.html\",\"content\":\"...\",\"language\":\"html\"}"],
+                ['role' => 'user', 'content' => json_encode([
                     'brief' => $brief, 'stack' => $stack, 'architecture' => $arch,
                     'design_system' => $design, 'backend' => $backend,
                     'pages' => $arch['frontend_pages'] ?? [],
-                    'file_to_generate' => $filename,
-                    'all_planned_files' => array_column($fileList, 'filename'),
-                    'config_files' => array_column($configFiles, 'filename'),
-                ]);
+                ])],
+            ];
+            $res = $this->callWithRetry($fileMsg, 8000, true, 'frontend-file');
+            $content = $res['content'] ?? '';
+            if ($content) {
+                $this->writeFile('index.html', $content);
+                $allFiles[] = ['filename' => 'index.html', 'content' => $content, 'language' => 'html'];
+            }
+        } else {
+            // File-by-file for component-based frameworks (max ~5 files from plan)
+            foreach ($fileList as $i => $fileDef) {
+                $this->progress(55 + intval(20 * $i / $total), "Frontend: fichier " . ($i + 1) . "/{$total}");
+                $filename = $fileDef['filename'] ?? "f{$i}.tsx";
+                $this->log('ai', "Frontend [{$i}/{$total}]: {$filename}...");
                 $fileMsg = [
                     ['role' => 'system', 'content' => $prompt . "\n\nGénère UNIQUEMENT le fichier {$filename}. Réponse JSON : {\"filename\":\"{$filename}\",\"content\":\"...\",\"language\":\"...\"}"],
-                    ['role' => 'user', 'content' => json_encode($feContent)],
+                    ['role' => 'user', 'content' => json_encode([
+                        'brief' => $brief, 'stack' => $stack, 'architecture' => $arch,
+                        'design_system' => $design, 'backend' => $backend,
+                        'pages' => $arch['frontend_pages'] ?? [],
+                        'file_to_generate' => $filename,
+                        'all_planned_files' => array_column($fileList, 'filename'),
+                    ])],
                 ];
-                $res = $this->callWithRetry($fileMsg, 8000, true, 'frontend-file');
+                $res = $this->callWithRetry($fileMsg, 6000, true, 'frontend-file');
                 $fn = $res['filename'] ?? $filename;
                 $content = $res['content'] ?? '';
                 if ($content) {
@@ -915,10 +609,9 @@ class PipelineEngine {
             }
         }
 
-        $totalFiles = count($allFiles) + count($allConfigFiles);
-        if ($totalFiles === 0) throw new Exception('Frontend: aucun fichier généré');
-        $this->log('ok', 'Frontend généré : ' . count($allFiles) . ' composants + ' . count($allConfigFiles) . ' fichiers de config');
-        return ['files' => $allFiles, 'config_files' => $allConfigFiles];
+        if (empty($allFiles)) throw new Exception('Frontend: aucun fichier généré');
+        $this->log('ok', 'Frontend généré : ' . count($allFiles) . ' fichiers');
+        return ['files' => $allFiles];
     }
 
     // ─── Agent QA ─────────────────────────────────────────────────
@@ -926,40 +619,26 @@ class PipelineEngine {
     private function runQA(array $brief, array $stack, array $allFiles): array {
         $prompt = $this->loadAgentPrompt('qa');
 
-        // Send full file content so QA can produce accurate fixes
+        // Build a compact summary of all files for the QA agent
         $filesSummary = [];
         foreach ($allFiles as $f) {
-            $fn = $f['filename'] ?? 'unknown';
-            if ($fn === '_build_errors.json') continue;
-            $content = $f['content'] ?? '';
-            if (strlen($content) > 2000) {
-                $content = substr($content, 0, 2000) . "\n\n... [truncated, total " . strlen($content) . " chars]";
-            }
             $filesSummary[] = [
-                'filename' => $fn,
+                'filename' => $f['filename'] ?? 'unknown',
                 'language' => $f['language'] ?? 'unknown',
                 'size' => strlen($f['content'] ?? ''),
-                'content' => $content,
+                'preview' => substr($f['content'] ?? '', 0, 500),
             ];
         }
 
-        $qaContent = $this->enrichContext('qa', [
-            'brief' => $brief,
-            'stack' => $stack,
-            'files' => $filesSummary,
-        ]);
-
-        $qaJson = json_encode($qaContent, JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_UNICODE);
-        if ($qaJson === false) {
-            $qaJson = json_encode(['error' => 'Échec encodage QA', 'files' => count($allFiles)], JSON_INVALID_UTF8_SUBSTITUTE);
-        }
         $messages = [
             ['role' => 'system', 'content' => $prompt],
-            ['role' => 'user', 'content' => $qaJson],
+            ['role' => 'user', 'content' => json_encode([
+                'brief' => $brief,
+                'stack' => $stack,
+                'files' => $filesSummary,
+            ])],
         ];
-        $res = $this->callWithRetry($messages, 16000, true, 'qa');
-        $this->storeAgentMemory('qa', 'Score: ' . ($res['score'] ?? 'N/A') . ', Problèmes: ' . count($res['issues'] ?? []), json_encode(array_slice($res['issues'] ?? [], 0, 3)));
-        return $res;
+        return $this->callWithRetry($messages, 16000, true, 'qa');
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -974,20 +653,16 @@ class PipelineEngine {
         $cmds = [];
 
         // Node.js / JS ecosystem
-        $hasNode = in_array($front, ['next','react','vue','nuxt','svelte','angular','astro','remix','react_native'])
-            || in_array($back, ['node_express','supabase','firebase']);
-        if ($hasNode) {
-            // Detect package.json locations (root, backend/, frontend/)
-            $pkgDirs = [];
-            if (file_exists("$buildDir/package.json")) $pkgDirs[] = $buildDir;
-            if (file_exists("$buildDir/backend/package.json")) $pkgDirs[] = "$buildDir/backend";
-            if (file_exists("$buildDir/frontend/package.json")) $pkgDirs[] = "$buildDir/frontend";
-            foreach ($pkgDirs as $cwd) {
-                $label = $cwd === $buildDir ? 'root' : basename($cwd);
-                $cmds[] = ['name' => "npm_install_{$label}", 'cmd' => 'npm install --legacy-peer-deps 2>&1', 'cwd' => $cwd, 'optional' => false];
-                $cmds[] = ['name' => "npm_build_{$label}",   'cmd' => 'npm run build 2>&1',  'cwd' => $cwd, 'optional' => true];
-                $cmds[] = ['name' => "tsc_check_{$label}",   'cmd' => 'npx tsc --noEmit 2>&1', 'cwd' => $cwd, 'optional' => true];
-                $cmds[] = ['name' => "eslint_{$label}",      'cmd' => 'npx eslint . --max-warnings 50 2>&1', 'cwd' => $cwd, 'optional' => true];
+        if (in_array($front, ['next','react','vue','nuxt','svelte','angular','astro','remix','react_native','html_css_js'])
+            || in_array($back, ['node_express','supabase','firebase'])) {
+            $pkg = "$buildDir/package.json";
+            if (file_exists($pkg)) {
+                $cmds[] = ['name' => 'npm_install', 'cmd' => 'npm install --legacy-peer-deps 2>&1', 'cwd' => $buildDir, 'optional' => false];
+                $cmds[] = ['name' => 'npm_build',   'cmd' => 'npm run build 2>&1',  'cwd' => $buildDir, 'optional' => false];
+                // Try tsc check if typescript is present
+                $cmds[] = ['name' => 'tsc_check',   'cmd' => 'npx tsc --noEmit 2>&1', 'cwd' => $buildDir, 'optional' => true];
+                // Try lint
+                $cmds[] = ['name' => 'eslint',      'cmd' => 'npx eslint . --max-warnings 50 2>&1', 'cwd' => $buildDir, 'optional' => true];
             }
         }
 
@@ -1047,10 +722,11 @@ class PipelineEngine {
             $this->log('sys', "→ {$cmd['name']}...");
             $output = [];
             $code = -1;
+            $escaped = '"' . str_replace('"', '\"', $cmd['cmd']) . '"';
             if (PHP_OS_FAMILY === 'Windows') {
-                $fullCmd = "cd /d \"{$cmd['cwd']}\" && {$cmd['cmd']}";
+                $fullCmd = "cd /d \"{$cmd['cwd']}\" && $escaped";
             } else {
-                $fullCmd = "cd \"{$cmd['cwd']}\" && {$cmd['cmd']}";
+                $fullCmd = "cd \"{$cmd['cwd']}\" && $escaped";
             }
             exec($fullCmd, $output, $code);
             $outStr = implode("\n", array_slice($output, -20));
@@ -1083,11 +759,10 @@ class PipelineEngine {
         $issues = [];
         $localExports = []; // resolvedPath => [named exports, default export]
 
-        // Collect all exports (skip node_modules)
+        // Collect all exports
         foreach ($allFiles as $f) {
             $content = $f['content'] ?? '';
             $filename = $f['filename'] ?? '';
-            if (str_starts_with($filename, 'node_modules/')) continue;
             $named = [];
             $default = null;
 
@@ -1112,12 +787,11 @@ class PipelineEngine {
             $localExports[$filename] = ['named' => $named, 'default' => $default];
         }
 
-        // Check all imports (skip node_modules)
+        // Check all imports
         $buildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($this->projectFolder) . DIRECTORY_SEPARATOR;
         foreach ($allFiles as $f) {
             $content = $f['content'] ?? '';
             $filename = $f['filename'] ?? '';
-            if (str_starts_with($filename, 'node_modules/')) continue;
 
             // Find all import ... from 'relative/path'
             preg_match_all('/import\s+(?:\{\s*([^}]+)\s*\}|(\w+)(?:\s*,\s*\{\s*([^}]+)\s*\})?)\s+from\s+[\'"](\.\.?\/[^\'"]+)[\'"]/', $content, $imports, PREG_SET_ORDER);
@@ -1224,140 +898,119 @@ class PipelineEngine {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  BOUCLE QA-FIX — NEVER STOP jusqu'à score >= 95 ou stagnation
-    //  Inspiré de karpathy/autoresearch : autonome, ne demande jamais la permission
+    //  BOUCLE QA-FIX — max 3 itérations avec validation de build
     // ═══════════════════════════════════════════════════════════════════
 
-    private function qaFixLoop(array $brief, array $stackDecision, array $allFiles): array {
-        $buildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($this->projectFolder);
+    private function qaFixLoop(array $brief, array $stackDecision, array $allFiles, int $maxIterations = 3): array {
+        $currentFiles = $allFiles;
+        $allBuildErrors = [];
+        $finalScore = 0;
+        $finalIssues = [];
+        $finalFixes = [];
 
-        $this->log('sys', "═══ QA Inspection (build-only) ═══");
+        for ($iteration = 0; $iteration < $maxIterations; $iteration++) {
+            $this->log('sys', "═══ QA-Fix Itération " . ($iteration + 1) . "/{$maxIterations} ═══");
 
-        // Try AI QA if API available, fall back to build-only validation
-        $aiScore = null;
-        $issues = [];
-        try {
-            $qaResult = $this->runQA($brief, $stackDecision, $allFiles);
-            $aiScore = $qaResult['overall_score'] ?? null;
+            // Step 1: Run QA
+            $qaResult = $this->runQA($brief, $stackDecision, $currentFiles);
+            $score = $qaResult['overall_score'] ?? 0;
             $issues = $qaResult['issues'] ?? [];
-            $this->log('test', "Score IA : $aiScore/100 — " . count($issues) . " problèmes");
-        } catch (\Exception $e) {
-            $this->log('warn', "QA IA indisponible ({$e->getMessage()}), passage en mode build-only");
-        }
+            $fixes = $qaResult['fixes'] ?? [];
+            $finalScore = $score;
+            $finalIssues = $issues;
 
-        // Build validation (toujours disponible)
-        $buildResult = $this->runBuildValidation($stackDecision);
-        $importErrors = $this->validateFileImports($allFiles);
+            $this->log('test', "Score qualité : $score/100");
+            $this->log('test', "Problèmes : " . count($issues) . ", Corrections : " . count($fixes));
 
-        $errorSummary = [];
-        foreach (($buildResult['errors'] ?? []) as $be) {
-            if ($be['command'] === 'eslint') continue;
-            $errorSummary[] = "[{$be['command']}] {$be['output']}";
-        }
-        foreach ($importErrors as $ie) {
-            $errorSummary[] = "[import] {$ie['file']}: {$ie['issue']}";
-        }
-
-        $buildOk = $buildResult['success'] && empty($importErrors);
-        $score = $aiScore ?? ($buildOk ? 100 : 85);
-
-        $this->writeFile('_build_errors.json', json_encode([
-            'build_errors' => $errorSummary,
-            'issues' => $issues,
-            'score' => $score,
-        ], JSON_PRETTY_PRINT));
-
-        $this->log('sys', "→ Build: " . ($buildOk ? 'OK' : 'Échec') . " | Score: $score/100");
-
-        return [
-            'overall_score' => $score,
-            'issues' => $issues,
-            'fixes' => [],
-            'build_errors' => $errorSummary,
-            'build_success' => $buildOk,
-        ];
-    }
-
-    private function appendToFile(string $filename, string $content): void {
-        $buildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($this->projectFolder);
-        $path = $buildDir . DIRECTORY_SEPARATOR . $filename;
-        file_put_contents($path, $content, FILE_APPEND | LOCK_EX);
-    }
-
-    // ─── Agent de Réparation (1 appel API au lieu de regénérer tout) ──
-
-    private function runRepair(array $brief, array $stack, array $issues, array $buildErrors, array $existingFiles): array {
-        $this->log('ai', 'Repair Agent : Correction ciblée des ' . count($issues) . ' issues + ' . count($buildErrors) . ' erreurs build...');
-
-        // Build a compact summary of files with issues for the LLM
-        $fileSummary = [];
-        $issueFiles = [];
-        foreach ($issues as $iss) {
-            $fn = $iss['file'] ?? '';
-            if ($fn) $issueFiles[$fn] = true;
-        }
-        foreach ($buildErrors as $be) {
-            $out = $be['output'] ?? '';
-            if (preg_match_all('/^src\/(\S+\.tsx?)/m', $out, $m)) {
-                foreach ($m[1] as $fn) {
-                    $issueFiles['backend/src/' . $fn] = true;
+            // Apply fixes
+            foreach ($fixes as $fix) {
+                if (!empty($fix['file']) && !empty($fix['content'])) {
+                    $this->writeFile($fix['file'], $fix['content']);
+                    $this->log('heal', "🔧 Correction appliquée : {$fix['file']}");
+                    // Update in-memory files
+                    foreach ($currentFiles as &$cf) {
+                        if (($cf['filename'] ?? '') === $fix['file']) {
+                            $cf['content'] = $fix['content'];
+                            break;
+                        }
+                    }
                 }
             }
+
+            // Step 2: Re-scan files from disk (in case writeFile changed things)
+            $buildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($this->projectFolder);
+            $currentFiles = $this->scanFiles($buildDir);
+
+            // Step 3: Validate imports
+            $importErrors = $this->validateFileImports($currentFiles);
+            if (!empty($importErrors)) {
+                $this->log('warn', "⚠ Problèmes d'imports détectés : " . count($importErrors));
+                foreach ($importErrors as $ie) {
+                    $this->log('warn', "  {$ie['file']} → {$ie['import']}: {$ie['issue']}");
+                }
+            }
+
+            // Step 4: Run build validation
+            $buildResult = $this->runBuildValidation($stackDecision);
+            $buildErrors = $buildResult['errors'] ?? [];
+
+            if ($buildResult['success'] && empty($importErrors)) {
+                $this->log('ok', '✅ Build validé avec succès !');
+                $finalFixes = $fixes;
+                break;
+            }
+
+            // Collect errors for next iteration
+            $errorSummary = [];
+            foreach ($buildErrors as $be) {
+                $errorSummary[] = "[{$be['command']}] {$be['output']}";
+            }
+            foreach ($importErrors as $ie) {
+                $errorSummary[] = "[import] {$ie['file']}: {$ie['issue']}";
+            }
+            $allBuildErrors = $errorSummary;
+
+            if ($iteration < $maxIterations - 1) {
+                // Feed errors back into QA context for the next iteration
+                $this->log('sys', "🔄 Réinjection des erreurs dans le QA...");
+                // Create a temporary fix file that QA can see next time
+                $errorFile = '_build_errors.json';
+                $this->writeFile($errorFile, json_encode(['build_errors' => $allBuildErrors, 'iteration' => $iteration + 1], JSON_PRETTY_PRINT));
+                // Re-scan to include the error file
+                $currentFiles = $this->scanFiles($buildDir);
+            }
         }
-        foreach ($existingFiles as $f) {
-            $fn = $f['filename'] ?? '';
-            if (!isset($issueFiles[$fn]) && !str_starts_with($fn, '_build_errors')) continue;
-            $content = $f['content'] ?? '';
-            if (strlen($content) > 3000) $content = substr($content, 0, 3000) . "\n\n... [truncated]";
-            $fileSummary[] = [
-                'filename' => $fn,
-                'language' => $f['language'] ?? pathinfo($fn, PATHINFO_EXTENSION),
-                'current_content' => $content,
-            ];
-        }
 
-        $repairPrompt = "Tu es un ingénieur senior de correction de code. Tu reçois des issues QA et des erreurs de build.
-Corrige UNIQUEMENT les fichiers listés. Garde le reste du fichier intact.
-Réponds avec UNIQUEMENT les fichiers à modifier : {\"fixes\": [{\"filename\": \"...\", \"content\": \"fichier complet corrigé\"}]}";
+        // Clean up error file
+        $errorFilePath = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($this->projectFolder) . DIRECTORY_SEPARATOR . '_build_errors.json';
+        if (file_exists($errorFilePath)) unlink($errorFilePath);
 
-        $repairContent = $this->enrichContext('repair', [
-            'brief' => $brief,
-            'stack' => $stack,
-            'qa_issues' => $issues,
-            'build_errors' => $buildErrors,
-            'files_to_fix' => $fileSummary,
-        ]);
-
-        $messages = [
-            ['role' => 'system', 'content' => $repairPrompt],
-            ['role' => 'user', 'content' => json_encode($repairContent)],
+        return [
+            'overall_score' => $finalScore,
+            'issues' => $finalIssues,
+            'fixes' => $finalFixes,
+            'build_errors' => $allBuildErrors,
+            'iterations' => $iteration + 1,
+            'build_success' => empty(array_filter($buildResult['errors'] ?? [], fn($e) => $e['severity'] === 'error')),
         ];
-        $res = $this->callWithRetry($messages, 16000, true, 'repair');
-        $fixes = $res['fixes'] ?? [];
-
-        $this->log('ok', 'Repair : ' . count($fixes) . ' fichiers corrigés');
-        return $fixes;
     }
 
     // ─── Agent DevOps ─────────────────────────────────────────────
 
     private function runDevOps(array $brief, array $stack, array $arch): array {
         $prompt = $this->loadAgentPrompt('devops');
-        $devopsContent = $this->enrichContext('devops', [
-            'brief' => $brief,
-            'stack' => $stack,
-            'architecture' => $arch,
-            'frontend' => $stack['stack_decision']['frontend'] ?? 'react',
-            'backend' => $stack['stack_decision']['backend'] ?? 'node_express',
-            'database' => $stack['stack_decision']['database'] ?? 'sqlite',
-        ]);
         $messages = [
             ['role' => 'system', 'content' => $prompt],
-            ['role' => 'user', 'content' => json_encode($devopsContent)],
+            ['role' => 'user', 'content' => json_encode([
+                'brief' => $brief,
+                'stack' => $stack,
+                'architecture' => $arch,
+                'frontend' => $stack['stack_decision']['frontend'] ?? 'react',
+                'backend' => $stack['stack_decision']['backend'] ?? 'node_express',
+                'database' => $stack['stack_decision']['database'] ?? 'sqlite',
+            ])],
         ];
-        $res = $this->callWithRetry($messages, 16000, true, 'devops');
-        $this->storeAgentMemory('devops', 'Docker: ' . ($res['docker'] ? 'Oui' : 'Non') . ', CI: ' . ($res['ci_cd'] ? 'Oui' : 'Non'), json_encode($res));
-        return $res;
+        return $this->callWithRetry($messages, 16000, true, 'devops');
     }
 
     // ─── README ───────────────────────────────────────────────────
@@ -1375,7 +1028,7 @@ Réponds avec UNIQUEMENT les fichiers à modifier : {\"fixes\": [{\"filename\": 
             . implode("\n", array_map(fn($p) => "- **{$p['route']}** — {$p['title']}: {$p['description']}", $arch['frontend_pages'] ?? [])) . "\n\n"
             . "## API\n"
             . implode("\n", array_map(fn($e) => "- `{$e['method']} {$e['path']}` — {$e['description']}", $arch['api_endpoints'] ?? [])) . "\n\n"
-            . "## Généré par AkrourCoder V4\n"
+            . "## Généré par AutoCoder V4\n"
             . "- Modèle : " . AC4_MODEL . "\n"
             . "- Version : " . AC4_VERSION . "\n"
             . "- Date : " . date('Y-m-d H:i:s') . "\n"

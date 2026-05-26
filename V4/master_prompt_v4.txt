@@ -1,4 +1,4 @@
-AkrourCoder V4 — Générateur de code autonome multi-agents
+AutoCoder V4 — Générateur de code autonome multi-agents
 
 Un logiciel web PHP qui génère automatiquement des applications complètes (web, mobile, API) via une pipeline de 7 agents IA spécialisés.
 

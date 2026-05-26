@@ -1,6 +1,6 @@
 <?php
 /**
- * AkrourCoder V4 — Background Build Runner
+ * AutoCoder V4 ? Background Build Runner
  * Usage: php background_build.php <project_id>
  * Writes progress to DB; web UI polls for updates.
  */
@@ -12,12 +12,13 @@ $projectId = (int)($argv[1] ?? 0);
 if (!$projectId) { fwrite(STDERR, "Usage: php background_build.php <project_id>\n"); exit(1); }
 
 $db = getDB();
-$stmt = $db->prepare("SELECT * FROM projects WHERE id = ?"); $stmt->execute([$projectId]); $project = $stmt->fetch();
+$project = $db->query("SELECT * FROM projects WHERE id = $projectId")->fetch();
 if (!$project) { fwrite(STDERR, "Project #$projectId not found\n"); exit(1); }
 
 // Create build directory
 $buildDir = AC4_BUILDS_DIR . DIRECTORY_SEPARATOR . basename($project['folder']);
 if (!is_dir($buildDir)) mkdir($buildDir, 0755, true);
+if (!$project) { fwrite(STDERR, "Project #$projectId not found\n"); exit(1); }
 
 // Mark as building
 updateProject($db, $projectId, ['status' => 'building']);
@@ -41,9 +42,9 @@ try {
     $result = $engine->run($brief);
     $status = $result['success'] ? 'done' : 'failed';
     updateProject($db, $projectId, ['status' => $status]);
-    fwrite(STDERR, "Build #$projectId terminé: $status (QA: " . ($result['qa_score'] ?? 0) . "/100)\n");
+    fwrite(STDERR, "Build #$projectId termin?: $status (QA: {$result['qa_score']}/100)\n");
 } catch (\Throwable $e) {
     updateProject($db, $projectId, ['status' => 'failed']);
-    appendLog($db, $projectId, 'engine', 'err', $e->getMessage());
+    logBuild($db, $projectId, 'engine', 'err', $e->getMessage());
     fwrite(STDERR, "Build #$projectId ERREUR: " . $e->getMessage() . "\n");
 }
