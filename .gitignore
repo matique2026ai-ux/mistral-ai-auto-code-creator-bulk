@@ -1,4 +1,3 @@
-```
 # Compiled and binary files
 *.pyc
 *.class
@@ -9,6 +8,7 @@
 # Dependencies
 vendor/
 composer.lock
+node_modules/
 
 # Logs and temp files
 *.log
@@ -35,10 +35,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
-.Python
-install-sh
-Makefile
-config.status
+.installed.cfg
 *.egg-info/
 .eggs/
 .coverage
@@ -50,7 +47,6 @@ htmlcov/
 .nox/
 
 # Web specific
-node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -63,18 +59,23 @@ yarn-error.log*
 .Trashes
 ehthumbs.db
 Thumbs.db
+Desktop.ini
 
-# Local SQLite databases and builds
-V3/autocoder_v3.sqlite
-autocoder.sqlite
-V3/builds/
-V3.zip
-*.zip
+# Local SQLite databases
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 
-# V4
-V4/akrourcoder_v4.sqlite
+# Old versions
+V2/
+V3/
+
+# Build outputs
 V4/builds/
 
-```
-V4/akrourcoder_v4.sqlite-shm
-V4/akrourcoder_v4.sqlite-wal
+# Orphan root files
+api.php
+build_test.php
+check_db.php
+index.php
+save.php
