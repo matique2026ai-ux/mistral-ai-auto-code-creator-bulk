@@ -118,34 +118,100 @@ Le QA loop injecte les issues détectées comme `$brief['qa_feedback']` dans les
 
 ## Dernier commit
 
-**V4.17** — `HEAD` — Prompts premium : Designer unique, upload image, compliance forcée
+**V4.17c** — `HEAD` — Nettoyage repo + refactoring prompts premium
 
-### Améliorations
-- **Designer.md réécrit** : palette UNIQUE obligatoire (interdiction des 3 palettes d'exemple), composant image upload dans le design system, 4 @keyframes minimum, Google Fonts premium imposées, glassmorphism + box-shadows profondes
-- **Frontend.md renforcé** : **SUIVRE LE DESIGNER À LA LETTRE** (couleurs, animations, polies — pas de style générique), composant `<ImageUpload>` avec drag & drop obligatoire, variables CSS extraites de la `color_palette` du designer
-- **Backend.md étendu** : endpoint `POST /api/upload` (multer, 5MB, jpg/png/webp/gif), champ `image_url` (STRING, nullable) sur le modèle Article, `GET /uploads/` statique, suppression image à la suppression article
-- **`runRepair()` nouvel agent** : remplace la régénération complète backend+frontend (~15 appels API) par 1 appel repair unique
-- **`runFrontend()` amélioré** : génération scaffolding via `config_files`, force `main.tsx` et `App.tsx` obligatoires
-- **`fixImportExportMismatch()` étendu** : gère `export { Name }` (named exports) et `import Name from` (default vs named mismatch)
-- **`detectBuildCommands()`** : détecte `package.json` dans `backend/` et `frontend/` en plus de la racine
-- **`maxRepairIterations`** réduit de 3 à 2 (évite timeout build)
+### Historique des commits
+| Hash | Sujet |
+|------|-------|
+| `5bb0a0d` | Nettoyage projet : suppression V2, V3, fichiers orphelins racine, .gitignore |
+| `cbea222` | V4.17 suite — refactoring moteur + prompts agents CTO/QA/DevOps + optimisation BDD |
+| `4b2dd90` | V4.17 Prompts premium : Designer unique, upload image, compliance forcée |
+| `1b236a9` | V4.16 Correction prompts + engine pour builds blog réels validés |
 
-### Fichiers impactés (V4.17)
-| Fichier | Changements |
-|---------|-------------|
-| `agents/designer.md` | Réécriture complète : palette unique, image upload, premium components |
-| `agents/frontend.md` | Compliance designer forcée, ImageUpload composant, CSS variables |
-| `agents/backend.md` | Upload multer, image_url, suppression fichier |
-| `agents/architect.md` | Folder séparé frontend/backend dans folder_structure |
-| `engine.php` | runRepair(), runFrontend() refactoré, fixImportExportMismatch() étendu, detectBuildCommands() |
-| `models.php` | Ajustements compatibilité repair agent |
-| `tests/test_engine.php` | Tests mis à jour pour nouveau flow repair |
+### Nettoyage effectué
+- **V2/ et V3/** supprimés (versions obsolètes suivies dans git)
+- **Fichiers orphelins racine** supprimés : `api.php`, `index.php`, `build_test.php`, `check_db.php`, `save.php`
+- **V4/V4/**, **V4/templates/**, **V4/data.db** nettoyés
+- **V4/builds/** vidé et supprimé (recréé automatiquement par `writeFile()`)
+- **.gitignore** enrichi : couvre `*.sqlite`, `V2/`, `V3/`, fichiers orphelins
+
+### Améliorations prompts (V4.17)
+| Prompt | Changement clé |
+|--------|----------------|
+| `designer.md` | Palette UNIQUE obligatoire (interdiction des 3 exemples), 4 @keyframes, Google Fonts, image upload dans design system |
+| `frontend.md` | Compliance designer FORCÉE (couleurs, animations, polies), `<ImageUpload>` drag & drop, variables CSS du designer |
+| `backend.md` | `POST /api/upload` multer 5MB, `image_url` sur Article, suppression fichier, dossier `uploads/` statique |
+
+### Améliorations engine (V4.16-17)
+- `runRepair()` : 1 appel API au lieu de ~15 (réparation ciblée au lieu de regénération complète)
+- `runFrontend()` : scaffolding config_files, force main.tsx + App.tsx
+- `fixImportExportMismatch()` : gère named + default exports
+- `detectBuildCommands()` : cherche package.json dans backend/ + frontend/
+- `maxRepairIterations` : 3 → 2
+
+### Build blog-pro-final-32f1 validé
+- ✅ 20 fichiers source (10 backend + 10 frontend)
+- ✅ Backend compile (TypeScript → dist/, 0 erreurs)
+- ✅ Frontend compile (Vite, 43 modules, 10.68s)
+- ✅ Serveur démarre sur port 3000
+- ✅ Login API fonctionnel (admin@blog.com / admin123)
+- ❌ **Design non-premium** : palette générique, pas d'upload image, UX basique (cause : prompts trop permissifs, corrigé dans V4.17)
 
 ---
 
-## Prochaines étapes possibles
-1. **Tester le pipeline end-to-end avec un vrai build** (nécessite clé API Mistral fonctionnelle)
-2. Ajouter un test unitaire pour la boucle QA avec mock
-3. Implémenter le mode démon pour le worker (`worker.php --daemon`)
-4. Améliorer la gestion d'erreur API avec fallback provider automatique
-5. Ajouter un endpoint SSE temps réel pour remplacer le polling
+## État actuel du repo
+
+```
+/ (racine)
+├── AGENTS.md          ← ce fichier
+├── opencode.json      ← config opencode
+├── .gitignore         ← enrichi
+└── V4/
+    ├── index.php      ← UI
+    ├── engine.php     ← pipeline 7 agents
+    ├── api.php        ← REST API
+    ├── config.php     ← constantes
+    ├── db.php         ← SQLite
+    ├── models.php     ← routeur IA
+    ├── queue.php      ← job queue
+    ├── worker.php     ← worker parallèle
+    ├── job_runner.php ← exécution jobs
+    ├── background_build.php
+    ├── background_resume.php
+    ├── cli.php        ← mode CLI
+    ├── sandbox.php    ← exécution sécurisée
+    ├── helpers.php    ← utilitaires
+    ├── agents/*.md    ← prompts des 7 agents
+    ├── assets/        ← JS + CSS
+    ├── tests/         ← 40 tests, 5 suites
+    └── builds/        ← (créé automatiquement)
+```
+
+---
+
+## Session context (pour prochain agent)
+
+### Problème principal
+Les agents IA (Designer, Frontend) ne produisent pas de design premium malgré la recherche web. Les palettes sont recyclées, l'UX est basique, pas d'upload image.
+
+### Cause identifiée
+Les prompts `designer.md` et `frontend.md` étaient trop permissifs. Le designer avait 3 palettes d'exemple qu'il copiait toujours. Le frontend n'était pas forcé d'utiliser les specs du designer.
+
+### Correction appliquée (V4.17 prompts)
+- Designer : palette UNIQUE obligatoire, specs détaillées (composants, animations, upload)
+- Frontend : compliance STRICTE au designer (couleurs, animations, polies)
+- Backend : endpoint upload + champ image_url
+
+### Ce qui reste à faire
+1. **Tester un nouveau build** avec les prompts V4.17 pour vérifier que le rendu est premium
+2. **Vérifier que la recherche web** est utilisée par les agents pour innover
+3. **Si le rendu reste basique**, renforcer encore les prompts ou ajouter de la mémoire inter-build pour forcer l'originalité
+4. **Ne PAS modifier manuellement les builds** — les corrections doivent passer par les prompts
+
+### Rappel technique
+- `php tests/all.php` → 40/40 tests
+- `AC4_BUILDS_DIR` = `V4/builds/` (créé auto par `writeFile()`)
+- `run()` = pipeline synchrone, `runJob()` = pipeline asynchrone
+- Les deux utilisent `runRepair()` maintenant
+- Multi-provider : Mistral (devstral-2512), OpenAI, Claude, Gemini
+- Windows : `node_modules/` ralentit `Get-ChildItem -Recurse`, utiliser `-Exclude`
